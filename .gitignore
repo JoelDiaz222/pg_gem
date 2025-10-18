@@ -1,5 +1,6 @@
 .git/
 .idea/
+.vscode/
 pg_gem_core/Cargo.lock
 pg_gem_core/target/
 *.a

@@ -16,8 +16,14 @@ typedef struct
     size_t dim;
 } EmbeddingBatch;
 
+typedef struct
+{
+    const char *ptr;
+    size_t len;
+} StringSlice;
+
 extern int generate_embeddings_from_texts(
-    const char **inputs,
+    const StringSlice *inputs,
     size_t n_inputs,
     EmbeddingBatch *out_batch
 );
@@ -47,12 +53,19 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
     if (nitems == 0)
         PG_RETURN_NULL();
 
-    const char **c_inputs = palloc(sizeof(char *) * nitems);
+    StringSlice *c_inputs = palloc(sizeof(StringSlice) * nitems);
     for (int i = 0; i < nitems; i++)
-        c_inputs[i] = TextDatumGetCString(text_elems[i]);
+    {
+        text *t = DatumGetTextP(text_elems[i]);
+        c_inputs[i].ptr = VARDATA_ANY(t);
+        c_inputs[i].len = VARSIZE_ANY_EXHDR(t);
+    }
 
     EmbeddingBatch batch;
     int err = generate_embeddings_from_texts(c_inputs, nitems, &batch);
+
+    pfree(c_inputs);
+
     if (err != 0)
         elog(ERROR, "embedding generation failed (code=%d)", err);
 
@@ -78,6 +91,10 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
     );
 
     free_embedding_batch(&batch);
+
+    for (size_t i = 0; i < batch.n_vectors; i++)
+        pfree(DatumGetPointer(vectors[i]));
+    pfree(vectors);
 
     PG_RETURN_ARRAYTYPE_P(result);
 }
@@ -122,7 +139,7 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         if (n_ids != n_texts)
             elog(ERROR, "ids and texts arrays must have same length");
 
-        const char **c_inputs = palloc(sizeof(char *) * n_texts);
+        StringSlice *c_inputs = palloc(sizeof(StringSlice) * n_texts);
         int *c_ids = palloc(sizeof(int) * n_ids);
 
         for (int i = 0; i < n_texts; i++)
@@ -131,11 +148,16 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
                 elog(ERROR, "NULL values not allowed");
 
             c_ids[i] = DatumGetInt32(id_elems[i]);
-            c_inputs[i] = TextDatumGetCString(text_elems[i]);
+            text *t = DatumGetTextP(text_elems[i]);
+            c_inputs[i].ptr = VARDATA_ANY(t);
+            c_inputs[i].len = VARSIZE_ANY_EXHDR(t);
         }
 
         EmbeddingBatch batch;
         int err = generate_embeddings_from_texts(c_inputs, n_texts, &batch);
+
+        pfree(c_inputs);
+
         if (err != 0)
             elog(ERROR, "embedding generation failed (code=%d)", err);
 
