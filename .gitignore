@@ -1,0 +1,13 @@
+.git/
+.idea/
+pg_gem_core/Cargo.lock
+pg_gem_core/target/
+*.a
+*.o
+*.so
+*.bc
+*.dll
+*.dylib
+*.obj
+*.lib
+*.exp
