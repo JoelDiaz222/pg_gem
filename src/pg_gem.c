@@ -11,7 +11,7 @@ PG_MODULE_MAGIC;
 
 typedef struct
 {
-    float **data;
+    float *data;
     size_t n_vectors;
     size_t dim;
 } EmbeddingBatch;
@@ -52,8 +52,9 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
         c_inputs[i] = TextDatumGetCString(text_elems[i]);
 
     EmbeddingBatch batch;
-    if (generate_embeddings_from_texts(c_inputs, nitems, &batch) != 0)
-        elog(ERROR, "embedding generation failed");
+    int err = generate_embeddings_from_texts(c_inputs, nitems, &batch);
+    if (err != 0)
+        elog(ERROR, "embedding generation failed (code=%d)", err);
 
     Datum *vectors = palloc(sizeof(Datum) * batch.n_vectors);
     for (size_t i = 0; i < batch.n_vectors; i++)
@@ -62,7 +63,7 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
         SET_VARSIZE(v, VECTOR_SIZE(batch.dim));
         v->dim = batch.dim;
         v->unused = 0;
-        memcpy(v->x, batch.data[i], sizeof(float) * batch.dim);
+        memcpy(v->x, batch.data + i * batch.dim, sizeof(float) * batch.dim);
         vectors[i] = PointerGetDatum(v);
     }
 
@@ -113,7 +114,6 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         funcctx = SRF_FIRSTCALL_INIT();
         oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
-        // Deconstruct input arrays
         deconstruct_array(ids_array, INT4OID, 4, true, 'i',
                           &id_elems, &id_nulls, &n_ids);
         deconstruct_array(texts_array, TEXTOID, -1, false, 'i',
@@ -134,12 +134,11 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
             c_inputs[i] = TextDatumGetCString(text_elems[i]);
         }
 
-        // Generate embeddings
         EmbeddingBatch batch;
-        if (generate_embeddings_from_texts(c_inputs, n_texts, &batch) != 0)
-            elog(ERROR, "embedding generation failed");
+        int err = generate_embeddings_from_texts(c_inputs, n_texts, &batch);
+        if (err != 0)
+            elog(ERROR, "embedding generation failed (code=%d)", err);
 
-        // Prepare results
         Vector **vectors = palloc(sizeof(Vector *) * batch.n_vectors);
         for (size_t i = 0; i < batch.n_vectors; i++)
         {
@@ -147,7 +146,7 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
             SET_VARSIZE(v, VECTOR_SIZE(batch.dim));
             v->dim = batch.dim;
             v->unused = 0;
-            memcpy(v->x, batch.data[i], sizeof(float) * batch.dim);
+            memcpy(v->x, batch.data + i * batch.dim, sizeof(float) * batch.dim);
             vectors[i] = v;
         }
 

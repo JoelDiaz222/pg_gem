@@ -1,7 +1,10 @@
-use std::os::raw::{c_char, c_float, c_int};
 use std::ffi::CStr;
+use std::os::raw::{c_char, c_float, c_int};
 use std::slice;
+use std::sync::LazyLock;
 use tei::v1::{embed_client::EmbedClient, EmbedBatchRequest};
+use tokio::runtime::Runtime;
+use tonic::transport::Channel;
 
 pub mod tei {
     pub mod v1 {
@@ -11,12 +14,34 @@ pub mod tei {
 
 #[repr(C)]
 pub struct EmbeddingBatch {
-    pub data: *mut *mut c_float,    // array of float pointers (each vector)
-    pub n_vectors: usize,           // number of vectors
-    pub dim: usize,                 // number of dimensions per vector
+    pub data: *mut c_float,
+    pub n_vectors: usize,
+    pub dim: usize,
 }
 
-/// Generate embeddings using a gRPC service
+static RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("Failed to build Tokio runtime"));
+
+thread_local! {
+    static CLIENT: std::cell::RefCell<Option<EmbedClient<Channel>>> =
+        std::cell::RefCell::new(None);
+}
+
+fn get_client() -> Result<EmbedClient<Channel>, Box<dyn std::error::Error>> {
+    CLIENT.with(|cell| {
+        let mut client_opt = cell.borrow_mut();
+        if client_opt.is_none() {
+            let channel = RUNTIME.block_on(async {
+                Channel::from_static("http://127.0.0.1:50051")
+                    .connect()
+                    .await
+            })?;
+            *client_opt = Some(EmbedClient::new(channel));
+        }
+        Ok(client_opt.as_ref().unwrap().clone())
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn generate_embeddings_from_texts(
     inputs: *const *const c_char,
@@ -31,10 +56,10 @@ pub extern "C" fn generate_embeddings_from_texts(
         slice::from_raw_parts(inputs, n_inputs)
             .iter()
             .filter_map(|&ptr| {
-                if ptr.is_null() {
-                    None
+                if !ptr.is_null() {
+                    CStr::from_ptr(ptr).to_str().ok().map(str::to_owned)
                 } else {
-                    CStr::from_ptr(ptr).to_str().ok().map(|s| s.to_string())
+                    None
                 }
             })
             .collect()
@@ -44,71 +69,54 @@ pub extern "C" fn generate_embeddings_from_texts(
         return -2;
     }
 
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
+    let mut client = match get_client() {
+        Ok(c) => c,
         Err(_) => return -3,
     };
 
-    let mut client = match rt.block_on(async {
-        EmbedClient::connect("http://localhost:50051").await
+    let response = match RUNTIME.block_on(async {
+        client
+            .embed_batch(tonic::Request::new(EmbedBatchRequest {
+                inputs: text_slices,
+                truncate: true,
+                normalize: true,
+                truncation_direction: 0,
+                prompt_name: None,
+                dimensions: None,
+            }))
+            .await
     }) {
-        Ok(client) => client,
-        Err(_) => return -4,
-    };
-
-    // Prepare the request
-    let request = tonic::Request::new(EmbedBatchRequest {
-        inputs: text_slices,
-        truncate: true,
-        normalize: true,
-        truncation_direction: 0,
-        prompt_name: None,
-        dimensions: None,
-    });
-
-    // Get embeddings from TEI service
-    let embeddings_response = match rt.block_on(async {
-        client.embed_batch(request).await
-    }) {
-        Ok(response) => response.into_inner(),
+        Ok(resp) => resp.into_inner(),
         Err(_) => return -5,
     };
 
-    let embeddings = embeddings_response.embeddings;
-
-    if embeddings.is_empty() {
+    if response.embeddings.is_empty() {
         return -6;
     }
 
-    // Get dimension from first embedding
-    let dim = embeddings[0].values.len();
+    let n_vectors = response.embeddings.len();
+    let dim = response.embeddings[0].values.len();
+    let total = n_vectors * dim;
 
-    // Convert embeddings to FFI-compatible format
-    let mut data_ptrs: Vec<*mut c_float> = Vec::with_capacity(embeddings.len());
-
-    for embedding in embeddings {
-        let mut values: Vec<f32> = embedding.values;
-        let ptr = values.as_mut_ptr();
-        std::mem::forget(values);
-        data_ptrs.push(ptr);
+    let mut flat = Vec::with_capacity(total);
+    for e in response.embeddings {
+        flat.extend_from_slice(&e.values);
     }
 
-    let batch = EmbeddingBatch {
-        data: data_ptrs.as_mut_ptr(),
-        n_vectors: data_ptrs.len(),
-        dim,
-    };
-
-    std::mem::forget(data_ptrs);
+    let ptr = flat.as_mut_ptr();
+    std::mem::forget(flat);
 
     unsafe {
-        *out_batch = batch;
+        *out_batch = EmbeddingBatch {
+            data: ptr,
+            n_vectors,
+            dim,
+        };
     }
 
     0
 }
 
-// Helper function to free the embedding batch
 #[unsafe(no_mangle)]
 pub extern "C" fn free_embedding_batch(batch: *mut EmbeddingBatch) {
     if batch.is_null() {
@@ -117,20 +125,9 @@ pub extern "C" fn free_embedding_batch(batch: *mut EmbeddingBatch) {
 
     unsafe {
         let batch_ref = &*batch;
-
-        // Free each vector
-        let data_slice = slice::from_raw_parts(batch_ref.data, batch_ref.n_vectors);
-        for &ptr in data_slice {
-            if !ptr.is_null() {
-                drop(Vec::from_raw_parts(ptr, batch_ref.dim, batch_ref.dim));
-            }
+        if !batch_ref.data.is_null() && batch_ref.n_vectors > 0 && batch_ref.dim > 0 {
+            let total = batch_ref.n_vectors * batch_ref.dim;
+            drop(Vec::from_raw_parts(batch_ref.data, total, total));
         }
-
-        // Free the array of pointers
-        drop(Vec::from_raw_parts(
-            batch_ref.data,
-            batch_ref.n_vectors,
-            batch_ref.n_vectors,
-        ));
     }
 }
