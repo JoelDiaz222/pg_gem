@@ -7,6 +7,9 @@
 #include "catalog/namespace.h"
 #include "vector.h"
 
+#define EMBED_METHOD_REMOTE 0
+#define EMBED_METHOD_FASTEMBED 1
+
 PG_MODULE_MAGIC;
 
 typedef struct
@@ -23,6 +26,7 @@ typedef struct
 } StringSlice;
 
 extern int generate_embeddings_from_texts(
+    int method,
     const StringSlice *inputs,
     size_t n_inputs,
     EmbeddingBatch *out_batch
@@ -34,10 +38,20 @@ PG_FUNCTION_INFO_V1(generate_embeddings);
 
 Datum generate_embeddings(PG_FUNCTION_ARGS)
 {
-    ArrayType *input_array = PG_GETARG_ARRAYTYPE_P(0);
+    text *method_text = PG_GETARG_TEXT_P(0);
+    ArrayType *input_array = PG_GETARG_ARRAYTYPE_P(1);
     Datum *text_elems;
     bool *nulls;
     int nitems;
+    int method;
+
+    char *method_str = text_to_cstring(method_text);
+    if (strcmp(method_str, "remote") == 0)
+        method = EMBED_METHOD_REMOTE;
+    else if (strcmp(method_str, "fastembed") == 0)
+        method = EMBED_METHOD_FASTEMBED;
+    else
+        elog(ERROR, "Invalid embedding method: %s (use 'remote' or 'fastembed')", method_str);
 
     deconstruct_array(
         input_array,
@@ -62,7 +76,7 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
     }
 
     EmbeddingBatch batch;
-    int err = generate_embeddings_from_texts(c_inputs, nitems, &batch);
+    int err = generate_embeddings_from_texts(method, c_inputs, nitems, &batch);
 
     pfree(c_inputs);
 
@@ -104,8 +118,9 @@ PG_FUNCTION_INFO_V1(generate_embeddings_with_ids);
 Datum
 generate_embeddings_with_ids(PG_FUNCTION_ARGS)
 {
-    ArrayType *ids_array = PG_GETARG_ARRAYTYPE_P(0);
-    ArrayType *texts_array = PG_GETARG_ARRAYTYPE_P(1);
+    text *method_text = PG_GETARG_TEXT_P(0);
+    ArrayType *ids_array = PG_GETARG_ARRAYTYPE_P(1);
+    ArrayType *texts_array = PG_GETARG_ARRAYTYPE_P(2);
 
     Datum *id_elems;
     bool *id_nulls;
@@ -114,6 +129,7 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
     Datum *text_elems;
     bool *text_nulls;
     int n_texts;
+    int method;
 
     FuncCallContext *funcctx;
     typedef struct
@@ -130,6 +146,14 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
 
         funcctx = SRF_FIRSTCALL_INIT();
         oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+        char *method_str = text_to_cstring(method_text);
+        if (strcmp(method_str, "remote") == 0)
+            method = EMBED_METHOD_REMOTE;
+        else if (strcmp(method_str, "fastembed") == 0)
+            method = EMBED_METHOD_FASTEMBED;
+        else
+            elog(ERROR, "Invalid embedding method: %s (use 'remote' or 'fastembed')", method_str);
 
         deconstruct_array(ids_array, INT4OID, 4, true, 'i',
                           &id_elems, &id_nulls, &n_ids);
@@ -154,7 +178,7 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         }
 
         EmbeddingBatch batch;
-        int err = generate_embeddings_from_texts(c_inputs, n_texts, &batch);
+        int err = generate_embeddings_from_texts(method, c_inputs, n_texts, &batch);
 
         pfree(c_inputs);
 
