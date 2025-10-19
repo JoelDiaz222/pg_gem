@@ -3,6 +3,7 @@
 .vscode/
 pg_gem_core/Cargo.lock
 pg_gem_core/target/
+server/venv/
 *.a
 *.o
 *.so
