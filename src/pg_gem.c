@@ -7,8 +7,8 @@
 #include "catalog/namespace.h"
 #include "vector.h"
 
-#define EMBED_METHOD_REMOTE 0
-#define EMBED_METHOD_FASTEMBED 1
+#define EMBED_METHOD_FASTEMBED 0
+#define EMBED_METHOD_REMOTE 1
 
 PG_MODULE_MAGIC;
 
@@ -46,12 +46,12 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
     int method;
 
     char *method_str = text_to_cstring(method_text);
-    if (strcmp(method_str, "remote") == 0)
-        method = EMBED_METHOD_REMOTE;
-    else if (strcmp(method_str, "fastembed") == 0)
+    if (strcmp(method_str, "fastembed") == 0)
         method = EMBED_METHOD_FASTEMBED;
+    else if (strcmp(method_str, "remote") == 0)
+        method = EMBED_METHOD_REMOTE;
     else
-        elog(ERROR, "Invalid embedding method: %s (use 'remote' or 'fastembed')", method_str);
+        elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
 
     deconstruct_array(
         input_array,
@@ -148,10 +148,10 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
         char *method_str = text_to_cstring(method_text);
-        if (strcmp(method_str, "remote") == 0)
-            method = EMBED_METHOD_REMOTE;
-        else if (strcmp(method_str, "fastembed") == 0)
+        if (strcmp(method_str, "fastembed") == 0)
             method = EMBED_METHOD_FASTEMBED;
+        else if (strcmp(method_str, "remote") == 0)
+            method = EMBED_METHOD_REMOTE;
         else
             elog(ERROR, "Invalid embedding method: %s (use 'remote' or 'fastembed')", method_str);
 
@@ -196,12 +196,14 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
             vectors[i] = v;
         }
 
+        size_t n_vectors = batch.n_vectors;
+
         free_embedding_batch(&batch);
 
         user_fctx *fctx = palloc(sizeof(user_fctx));
         fctx->ids = c_ids;
         fctx->vectors = vectors;
-        fctx->nitems = batch.n_vectors;
+        fctx->nitems = n_vectors;
         fctx->current = 0;
 
         funcctx->user_fctx = fctx;

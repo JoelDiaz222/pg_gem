@@ -33,8 +33,8 @@ pub struct EmbeddingBatch {
 
 #[repr(C)]
 pub enum EmbedMethod {
-    Remote = 0,
-    FastEmbed = 1,
+    FastEmbed = 0,
+    Remote = 1,
 }
 
 #[unsafe(no_mangle)]
@@ -69,8 +69,8 @@ pub extern "C" fn generate_embeddings_from_texts(
     };
 
     let result: Result<(Vec<f32>, usize, usize), Box<dyn std::error::Error>> = match method {
-        0 => generate_embeddings_remote(text_slices),
-        1 => generate_embeddings_fastembed(text_slices),
+        0 => generate_embeddings_fastembed(text_slices),
+        1 => generate_embeddings_remote(text_slices),
         _ => return ERR_INVALID_METHOD,
     };
 
