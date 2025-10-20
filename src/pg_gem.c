@@ -27,6 +27,7 @@ typedef struct
 
 extern int generate_embeddings_from_texts(
     int method,
+    const char *model,
     const StringSlice *inputs,
     size_t n_inputs,
     EmbeddingBatch *out_batch
@@ -39,13 +40,16 @@ PG_FUNCTION_INFO_V1(generate_embeddings);
 Datum generate_embeddings(PG_FUNCTION_ARGS)
 {
     text *method_text = PG_GETARG_TEXT_P(0);
-    ArrayType *input_array = PG_GETARG_ARRAYTYPE_P(1);
+    text *model_text = PG_GETARG_TEXT_P(1);
+    ArrayType *input_array = PG_GETARG_ARRAYTYPE_P(2);
     Datum *text_elems;
     bool *nulls;
     int nitems;
     int method;
 
     char *method_str = text_to_cstring(method_text);
+    char *model_str = text_to_cstring(model_text);
+
     if (strcmp(method_str, "fastembed") == 0)
         method = EMBED_METHOD_FASTEMBED;
     else if (strcmp(method_str, "remote") == 0)
@@ -76,7 +80,7 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
     }
 
     EmbeddingBatch batch;
-    int err = generate_embeddings_from_texts(method, c_inputs, nitems, &batch);
+    int err = generate_embeddings_from_texts(method, model_str, c_inputs, nitems, &batch);
 
     pfree(c_inputs);
 
@@ -119,8 +123,9 @@ Datum
 generate_embeddings_with_ids(PG_FUNCTION_ARGS)
 {
     text *method_text = PG_GETARG_TEXT_P(0);
-    ArrayType *ids_array = PG_GETARG_ARRAYTYPE_P(1);
-    ArrayType *texts_array = PG_GETARG_ARRAYTYPE_P(2);
+    text *model_text = PG_GETARG_TEXT_P(1);
+    ArrayType *ids_array = PG_GETARG_ARRAYTYPE_P(2);
+    ArrayType *texts_array = PG_GETARG_ARRAYTYPE_P(3);
 
     Datum *id_elems;
     bool *id_nulls;
@@ -148,6 +153,8 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
         char *method_str = text_to_cstring(method_text);
+        char *model_str = text_to_cstring(model_text);
+
         if (strcmp(method_str, "fastembed") == 0)
             method = EMBED_METHOD_FASTEMBED;
         else if (strcmp(method_str, "remote") == 0)
@@ -178,7 +185,7 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         }
 
         EmbeddingBatch batch;
-        int err = generate_embeddings_from_texts(method, c_inputs, n_texts, &batch);
+        int err = generate_embeddings_from_texts(method, model_str, c_inputs, n_texts, &batch);
 
         pfree(c_inputs);
 

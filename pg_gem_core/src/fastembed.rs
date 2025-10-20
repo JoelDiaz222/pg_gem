@@ -1,25 +1,34 @@
+use anyhow::{anyhow, Result};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
-use std::{cell::RefCell, path::PathBuf};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, str::FromStr};
 
 thread_local! {
-    static FASTEMBED_MODEL: RefCell<Option<TextEmbedding>> = RefCell::new(None);
+    static FASTEMBED_MODELS: RefCell<HashMap<String, TextEmbedding>> = RefCell::new(HashMap::new());
 }
 
 pub fn generate_embeddings_fastembed(
+    model: &str,
     text_slices: Vec<&str>,
-) -> Result<(Vec<f32>, usize, usize), Box<dyn std::error::Error>> {
-    Ok(FASTEMBED_MODEL.with(|cell| {
-        let mut model_ref = cell.borrow_mut();
+) -> Result<(Vec<f32>, usize, usize)> {
+    Ok(FASTEMBED_MODELS.with(|cell| {
+        let mut models = cell.borrow_mut();
 
-        if model_ref.is_none() {
-            let model = TextEmbedding::try_new(
-                InitOptions::new(EmbeddingModel::AllMiniLML6V2)
-                    .with_cache_dir(PathBuf::from("./fastembed_model")),
-            )?;
-            *model_ref = Some(model);
-        }
+        let model_instance = match models.get_mut(model) {
+            Some(instance) => instance,
+            None => {
+                let embedding_model = EmbeddingModel::from_str(model)
+                    .map_err(|e| anyhow!("Failed to parse model '{}': {}", model, e))?;
 
-        let model = model_ref.as_mut().unwrap();
-        model.embed_flat(text_slices, None)
+                let model_instance = TextEmbedding::try_new(
+                    InitOptions::new(embedding_model)
+                        .with_cache_dir(PathBuf::from("/fastembed_models")),
+                )?;
+
+                models.insert(model.to_string(), model_instance);
+                models.get_mut(model).expect("model just inserted")
+            }
+        };
+
+        model_instance.embed_flat(text_slices, None)
     })?)
 }
