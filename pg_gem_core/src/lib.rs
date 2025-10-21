@@ -1,8 +1,6 @@
-mod fastembed;
-mod remote;
+mod embedders;
 
-use crate::fastembed::generate_embeddings_fastembed;
-use crate::remote::generate_embeddings_remote;
+use crate::embedders::EmbedderRegistry;
 use anyhow::Result;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_float, c_int};
@@ -33,17 +31,6 @@ pub struct EmbeddingBatch {
     pub dim: usize,
 }
 
-#[repr(C)]
-pub enum EmbedMethod {
-    FastEmbed = 0,
-    Remote = 1,
-}
-
-#[unsafe(no_mangle)]
-pub static EMBED_METHOD_FASTEMBED: i32 = EmbedMethod::FastEmbed as i32;
-#[unsafe(no_mangle)]
-pub static EMBED_METHOD_REMOTE: i32 = EmbedMethod::Remote as i32;
-
 #[unsafe(no_mangle)]
 pub extern "C" fn generate_embeddings_from_texts(
     method: c_int,
@@ -63,19 +50,7 @@ pub extern "C" fn generate_embeddings_from_texts(
         }
     };
 
-    let text_slices: Result<Vec<&str>, _> = unsafe {
-        slice::from_raw_parts(inputs, n_inputs)
-            .iter()
-            .map(|slice| {
-                if slice.ptr.is_null() || slice.len == 0 {
-                    Err(())
-                } else {
-                    let bytes = slice::from_raw_parts(slice.ptr as *const u8, slice.len);
-                    std::str::from_utf8(bytes).map_err(|_| ())
-                }
-            })
-            .collect()
-    };
+    let text_slices = unsafe { get_text_slices(inputs, n_inputs) };
 
     let text_slices = match text_slices {
         Ok(v) if !v.is_empty() => v,
@@ -83,11 +58,12 @@ pub extern "C" fn generate_embeddings_from_texts(
         Err(_) => return ERR_INVALID_UTF8,
     };
 
-    let result: Result<(Vec<f32>, usize, usize)> = match method {
-        x if x == EMBED_METHOD_FASTEMBED => generate_embeddings_fastembed(model_str, text_slices),
-        x if x == EMBED_METHOD_REMOTE => generate_embeddings_remote(model_str, text_slices),
-        _ => return ERR_INVALID_METHOD,
+    let embedder = match EmbedderRegistry::get_embedder_by_method_id(method) {
+        Some(e) => e,
+        None => return ERR_INVALID_METHOD,
     };
+
+    let result = embedder.embed(model_str, text_slices);
 
     let (mut flat, n_vectors, dim) = match result {
         Ok((flat, n_vectors, dim)) if n_vectors > 0 && !flat.is_empty() => (flat, n_vectors, dim),
@@ -124,4 +100,25 @@ pub extern "C" fn free_embedding_batch(batch: *mut EmbeddingBatch) {
             b.dim = 0;
         }
     }
+}
+
+/// The C caller guarantees that the strings live for the call duration
+unsafe fn get_text_slices<'a>(
+    inputs: *const StringSlice,
+    n_inputs: usize,
+) -> Result<Vec<&'a str>, ()> {
+    let slices = unsafe { slice::from_raw_parts(inputs, n_inputs) };
+    let mut result = Vec::with_capacity(n_inputs);
+
+    for s in slices {
+        if s.ptr.is_null() || s.len == 0 {
+            return Err(());
+        }
+
+        let bytes = unsafe { slice::from_raw_parts(s.ptr as *const u8, s.len) };
+        let text = std::str::from_utf8(bytes).map_err(|_| ())?;
+        result.push(text);
+    }
+
+    Ok(result)
 }
