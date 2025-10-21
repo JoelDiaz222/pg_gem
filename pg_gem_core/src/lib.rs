@@ -26,24 +26,53 @@ pub struct EmbeddingBatch {
     pub dim: usize,
 }
 
+/// Validates method string and returns method ID
+/// Returns -1 if non-existent
 #[unsafe(no_mangle)]
-pub extern "C" fn generate_embeddings_from_texts(
-    method: c_int,
-    model: *const c_char,
-    inputs: *const StringSlice,
-    n_inputs: usize,
-    out_batch: *mut EmbeddingBatch,
-) -> c_int {
-    if inputs.is_null() || out_batch.is_null() || model.is_null() {
-        return ERR_INVALID_POINTERS;
+pub extern "C" fn validate_embedding_method(method: *const c_char) -> c_int {
+    if method.is_null() {
+        return -1;
+    }
+
+    let method_str = unsafe {
+        match CStr::from_ptr(method).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+
+    EmbedderRegistry::validate_method(method_str).unwrap_or(-1)
+}
+
+/// Validates model string for given method and returns model ID
+/// Returns -1 if non-existent or unallowed
+#[unsafe(no_mangle)]
+pub extern "C" fn validate_embedding_model(method_id: c_int, model: *const c_char) -> c_int {
+    if model.is_null() {
+        return -1;
     }
 
     let model_str = unsafe {
         match CStr::from_ptr(model).to_str() {
             Ok(s) => s,
-            Err(_) => return ERR_INVALID_UTF8,
+            Err(_) => return -1,
         }
     };
+
+    EmbedderRegistry::validate_model(method_id, model_str).unwrap_or(-1)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn generate_embeddings_from_texts(
+    method_id: c_int,
+    model_id: c_int,
+    inputs: *const StringSlice,
+    n_inputs: usize,
+    out_batch: *mut EmbeddingBatch,
+) -> c_int {
+    if inputs.is_null() || out_batch.is_null() {
+        return ERR_INVALID_POINTERS;
+    }
 
     let text_slices = unsafe { get_text_slices(inputs, n_inputs) };
 
@@ -53,16 +82,16 @@ pub extern "C" fn generate_embeddings_from_texts(
         Err(_) => return ERR_INVALID_UTF8,
     };
 
-    let embedder = match EmbedderRegistry::get_embedder_by_method_id(method) {
+    let embedder = match EmbedderRegistry::get_embedder_by_method_id(method_id) {
         Some(e) => e,
         None => return ERR_INVALID_METHOD,
     };
 
-    if !embedder.is_model_allowed(model_str) {
+    if !embedder.supports_model_id(model_id) {
         return ERR_MODEL_NOT_ALLOWED;
     }
 
-    let result = embedder.embed(model_str, text_slices);
+    let result = embedder.embed(model_id, text_slices);
 
     let (mut flat, n_vectors, dim) = match result {
         Ok((flat, n_vectors, dim)) if n_vectors > 0 && !flat.is_empty() => (flat, n_vectors, dim),

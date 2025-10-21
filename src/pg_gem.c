@@ -22,12 +22,13 @@ typedef struct
     size_t len;
 } StringSlice;
 
-extern const int EMBED_METHOD_FASTEMBED;
-extern const int EMBED_METHOD_GRPC;
+extern int validate_embedding_method(const char *method);
+
+extern int validate_embedding_model(int method_id, const char *model);
 
 extern int generate_embeddings_from_texts(
-    int method,
-    const char *model,
+    int method_id,
+    int model_id,
     const StringSlice *inputs,
     size_t n_inputs,
     EmbeddingBatch *out_batch
@@ -37,16 +38,6 @@ extern void free_embedding_batch(EmbeddingBatch *batch);
 
 PG_FUNCTION_INFO_V1(generate_embeddings);
 
-static int get_embedding_method_value(char *method_str)
-{
-    if (strcmp(method_str, "fastembed") == 0)
-        return EMBED_METHOD_FASTEMBED;
-    else if (strcmp(method_str, "remote") == 0)
-        return EMBED_METHOD_GRPC;
-    else
-        elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
-}
-
 Datum generate_embeddings(PG_FUNCTION_ARGS)
 {
     text *method_text = PG_GETARG_TEXT_P(0);
@@ -55,12 +46,17 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
     Datum *text_elems;
     bool *nulls;
     int nitems;
-    int method;
 
     char *method_str = text_to_cstring(method_text);
     char *model_str = text_to_cstring(model_text);
 
-    method = get_embedding_method_value(method_str);
+    int method_id = validate_embedding_method(method_str);
+    if (method_id < 0)
+        elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
+
+    int model_id = validate_embedding_model(method_id, model_str);
+    if (model_id < 0)
+        elog(ERROR, "Model not allowed: %s", model_str);
 
     deconstruct_array(
         input_array,
@@ -85,7 +81,7 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
     }
 
     EmbeddingBatch batch;
-    int err = generate_embeddings_from_texts(method, model_str, c_inputs, nitems, &batch);
+    int err = generate_embeddings_from_texts(method_id, model_id, c_inputs, nitems, &batch);
 
     pfree(c_inputs);
 
@@ -139,7 +135,6 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
     Datum *text_elems;
     bool *text_nulls;
     int n_texts;
-    int method;
 
     FuncCallContext *funcctx;
     typedef struct
@@ -160,7 +155,13 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         char *method_str = text_to_cstring(method_text);
         char *model_str = text_to_cstring(model_text);
 
-        method = get_embedding_method_value(method_str);
+        int method_id = validate_embedding_method(method_str);
+        if (method_id < 0)
+            elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
+
+        int model_id = validate_embedding_model(method_id, model_str);
+        if (model_id < 0)
+            elog(ERROR, "Model not allowed: %s", model_str);
 
         deconstruct_array(ids_array, INT4OID, 4, true, 'i',
                           &id_elems, &id_nulls, &n_ids);
@@ -185,7 +186,7 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         }
 
         EmbeddingBatch batch;
-        int err = generate_embeddings_from_texts(method, model_str, c_inputs, n_texts, &batch);
+        int err = generate_embeddings_from_texts(method_id, model_id, c_inputs, n_texts, &batch);
 
         pfree(c_inputs);
 
