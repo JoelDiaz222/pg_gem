@@ -15,8 +15,9 @@ pub enum EmbedMethod {
 
 pub trait Embedder: Send + Sync {
     fn method(&self) -> EmbedMethod;
-    fn embed(&self, model: &str, text_slices: Vec<&str>) -> Result<(Vec<f32>, usize, usize)>;
-    fn is_model_allowed(&self, model: &str) -> bool;
+    fn embed(&self, model_id: i32, text_slices: Vec<&str>) -> Result<(Vec<f32>, usize, usize)>;
+    fn get_model_id(&self, model: &str) -> Option<i32>;
+    fn supports_model_id(&self, model_id: i32) -> bool;
 }
 
 #[distributed_slice]
@@ -30,5 +31,20 @@ impl EmbedderRegistry {
             .iter()
             .find(|e| e.method() as i32 == method)
             .copied()
+    }
+
+    pub fn validate_method(method: &str) -> Option<i32> {
+        match method {
+            #[cfg(feature = "fastembed")]
+            "fastembed" => Some(EmbedMethod::FastEmbed as i32),
+            #[cfg(feature = "grpc")]
+            "remote" => Some(EmbedMethod::Grpc as i32),
+            _ => None,
+        }
+    }
+
+    pub fn validate_model(method_id: i32, model: &str) -> Option<i32> {
+        let embedder = Self::get_embedder_by_method_id(method_id)?;
+        embedder.get_model_id(model)
     }
 }

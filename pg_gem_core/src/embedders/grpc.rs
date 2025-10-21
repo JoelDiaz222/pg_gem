@@ -41,10 +41,17 @@ thread_local! {
 struct GrpcEmbedder;
 
 impl GrpcEmbedder {
-    const ALLOWLIST: &'static [&'static str] = &[
-        "sentence-transformers/all-MiniLM-L6-v2",
-        "sentence-transformers/bge-large-en-v1.5",
+    const MODELS: &'static [(i32, &'static str)] = &[
+        (0, "sentence-transformers/all-MiniLM-L6-v2"),
+        (1, "sentence-transformers/bge-large-en-v1.5"),
     ];
+
+    fn get_model_string(model_id: i32) -> Option<&'static str> {
+        Self::MODELS
+            .iter()
+            .find(|(id, _)| *id == model_id)
+            .map(|(_, model)| *model)
+    }
 
     fn get_grpc_client() -> Result<EmbedClient<Channel>> {
         CLIENT.with(|cell| {
@@ -63,7 +70,10 @@ impl Embedder for GrpcEmbedder {
         EmbedMethod::Grpc
     }
 
-    fn embed(&self, model: &str, text_slices: Vec<&str>) -> Result<(Vec<f32>, usize, usize)> {
+    fn embed(&self, model_id: i32, text_slices: Vec<&str>) -> Result<(Vec<f32>, usize, usize)> {
+        let model = Self::get_model_string(model_id)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model ID: {}", model_id))?;
+
         let mut client = GrpcEmbedder::get_grpc_client()?;
 
         let response = RUNTIME.block_on(async {
@@ -99,8 +109,15 @@ impl Embedder for GrpcEmbedder {
         Ok((flat, n_vectors, dim))
     }
 
-    fn is_model_allowed(&self, model: &str) -> bool {
-        Self::ALLOWLIST.contains(&model)
+    fn get_model_id(&self, model: &str) -> Option<i32> {
+        Self::MODELS
+            .iter()
+            .find(|(_, m)| *m == model)
+            .map(|(id, _)| *id)
+    }
+
+    fn supports_model_id(&self, model_id: i32) -> bool {
+        Self::get_model_string(model_id).is_some()
     }
 }
 
