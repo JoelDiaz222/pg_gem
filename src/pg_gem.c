@@ -1,3 +1,4 @@
+#include "pg_gem.h"
 #include "postgres.h"
 #include "fmgr.h"
 #include "funcapi.h"
@@ -8,33 +9,6 @@
 #include "vector.h"
 
 PG_MODULE_MAGIC;
-
-typedef struct
-{
-    float *data;
-    size_t n_vectors;
-    size_t dim;
-} EmbeddingBatch;
-
-typedef struct
-{
-    const char *ptr;
-    size_t len;
-} StringSlice;
-
-extern int validate_embedding_method(const char *method);
-
-extern int validate_embedding_model(int method_id, const char *model);
-
-extern int generate_embeddings_from_texts(
-    int method_id,
-    int model_id,
-    const StringSlice *inputs,
-    size_t n_inputs,
-    EmbeddingBatch *out_batch
-);
-
-extern void free_embedding_batch(EmbeddingBatch *batch);
 
 PG_FUNCTION_INFO_V1(generate_embeddings);
 
