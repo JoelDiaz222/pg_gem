@@ -16,6 +16,7 @@ pub enum EmbedMethod {
 pub trait Embedder: Send + Sync {
     fn method(&self) -> EmbedMethod;
     fn embed(&self, model: &str, text_slices: Vec<&str>) -> Result<(Vec<f32>, usize, usize)>;
+    fn is_model_allowed(&self, model: &str) -> bool;
 }
 
 #[distributed_slice]

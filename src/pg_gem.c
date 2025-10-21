@@ -23,7 +23,7 @@ typedef struct
 } StringSlice;
 
 extern const int EMBED_METHOD_FASTEMBED;
-extern const int EMBED_METHOD_REMOTE;
+extern const int EMBED_METHOD_GRPC;
 
 extern int generate_embeddings_from_texts(
     int method,
@@ -42,7 +42,7 @@ static int get_embedding_method_value(char *method_str)
     if (strcmp(method_str, "fastembed") == 0)
         return EMBED_METHOD_FASTEMBED;
     else if (strcmp(method_str, "remote") == 0)
-        return EMBED_METHOD_REMOTE;
+        return EMBED_METHOD_GRPC;
     else
         elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
 }
