@@ -7,7 +7,9 @@ use linkme::distributed_slice;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbedMethod {
+    #[cfg(feature = "fastembed")]
     FastEmbed = 0,
+    #[cfg(feature = "remote")]
     Remote = 1,
 }
 

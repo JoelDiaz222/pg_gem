@@ -6,17 +6,21 @@ edition = "2024"
 [lib]
 crate-type = ["staticlib"]
 
+[features]
+default = ["fastembed"]
+remote = ["prost", "tonic", "tokio", "tonic-prost", "tonic-prost-build"]
+
 [dependencies]
 anyhow = "1.0.100"
-fastembed = { git = "https://github.com/JoelDiaz222/fastembed-rs" }
+fastembed = { git = "https://github.com/JoelDiaz222/fastembed-rs", optional = true }
 linkme = "0.3.35"
-prost = "0.14.1"
-tonic = "0.14.2"
-tokio = { version = "1.47.1", features = ["rt-multi-thread"] }
-tonic-prost = "0.14.2"
+prost = { version = "0.14.1", optional = true }
+tonic = { version = "0.14.2", optional = true }
+tokio = { version = "1.47.1", features = ["rt-multi-thread"], optional = true }
+tonic-prost = { version = "0.14.2", optional = true }
 
 [build-dependencies]
-tonic-prost-build = "0.14.2"
+tonic-prost-build = { version = "0.14.2", optional = true }
 
 [profile.release]
 debug = 0

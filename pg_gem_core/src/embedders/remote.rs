@@ -1,12 +1,19 @@
+#![cfg(feature = "remote")]
+use crate::embedders::remote::tei::v1::embed_client::EmbedClient;
+use crate::embedders::remote::tei::v1::EmbedBatchRequest;
 use crate::embedders::{EmbedMethod, Embedder, EMBEDDERS};
-use crate::tei::v1::embed_client::EmbedClient;
-use crate::tei::v1::EmbedBatchRequest;
 use anyhow::Result;
 use std::os::raw::c_float;
 use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 use tonic::transport::{Channel, Endpoint};
+
+pub mod tei {
+    pub mod v1 {
+        tonic::include_proto!("tei.v1");
+    }
+}
 
 #[unsafe(no_mangle)]
 pub static EMBED_METHOD_REMOTE: i32 = EmbedMethod::Remote as i32;

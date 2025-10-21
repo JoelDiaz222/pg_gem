@@ -6,12 +6,6 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_float, c_int};
 use std::slice;
 
-pub mod tei {
-    pub mod v1 {
-        tonic::include_proto!("tei.v1");
-    }
-}
-
 const ERR_INVALID_POINTERS: c_int = -1;
 const ERR_EMPTY_INPUT: c_int = -2;
 const ERR_INVALID_UTF8: c_int = -3;

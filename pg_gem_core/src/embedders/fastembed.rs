@@ -1,3 +1,4 @@
+#![cfg(feature = "fastembed")]
 use crate::embedders::{EmbedMethod, Embedder, EMBEDDERS};
 use anyhow::Result;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
