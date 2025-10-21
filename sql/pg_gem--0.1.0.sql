@@ -1,5 +1,6 @@
 CREATE FUNCTION generate_embeddings(
     method text,
+    model text,
     texts text[]
 )
 RETURNS vector[]
@@ -10,6 +11,7 @@ LANGUAGE C STRICT PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION generate_embeddings_with_ids(
     method text,
+    model text,
     ids integer[],
     texts text[]
 )

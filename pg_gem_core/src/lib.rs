@@ -3,6 +3,8 @@ mod remote;
 
 use crate::fastembed::generate_embeddings_fastembed;
 use crate::remote::generate_embeddings_remote;
+use anyhow::Result;
+use std::ffi::CStr;
 use std::os::raw::{c_char, c_float, c_int};
 use std::slice;
 
@@ -40,13 +42,21 @@ pub enum EmbedMethod {
 #[unsafe(no_mangle)]
 pub extern "C" fn generate_embeddings_from_texts(
     method: c_int,
+    model: *const c_char,
     inputs: *const StringSlice,
     n_inputs: usize,
     out_batch: *mut EmbeddingBatch,
 ) -> c_int {
-    if inputs.is_null() || out_batch.is_null() {
+    if inputs.is_null() || out_batch.is_null() || model.is_null() {
         return ERR_INVALID_POINTERS;
     }
+
+    let model_str = unsafe {
+        match CStr::from_ptr(model).to_str() {
+            Ok(s) => s,
+            Err(_) => return ERR_INVALID_UTF8,
+        }
+    };
 
     let text_slices: Result<Vec<&str>, _> = unsafe {
         slice::from_raw_parts(inputs, n_inputs)
@@ -68,9 +78,9 @@ pub extern "C" fn generate_embeddings_from_texts(
         Err(_) => return ERR_INVALID_UTF8,
     };
 
-    let result: Result<(Vec<f32>, usize, usize), Box<dyn std::error::Error>> = match method {
-        0 => generate_embeddings_fastembed(text_slices),
-        1 => generate_embeddings_remote(text_slices),
+    let result: Result<(Vec<f32>, usize, usize)> = match method {
+        0 => generate_embeddings_fastembed(model_str, text_slices),
+        1 => generate_embeddings_remote(model_str, text_slices),
         _ => return ERR_INVALID_METHOD,
     };
 

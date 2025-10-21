@@ -28,6 +28,7 @@ message EmbedRequest {
     TruncationDirection truncation_direction = 4;
     optional string prompt_name = 5;
     optional uint32 dimensions = 6;
+    string model = 7;
 }
 
 message EmbedResponse {
@@ -42,6 +43,7 @@ message EmbedBatchRequest {
     TruncationDirection truncation_direction = 4;
     optional string prompt_name = 5;
     optional uint32 dimensions = 6;
+    string model = 7;
 }
 
 message EmbedBatchResponse {
