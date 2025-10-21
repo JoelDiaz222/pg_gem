@@ -1,5 +1,5 @@
 pub mod fastembed;
-pub mod remote;
+pub mod grpc;
 
 use anyhow::Result;
 use linkme::distributed_slice;
@@ -9,8 +9,8 @@ use linkme::distributed_slice;
 pub enum EmbedMethod {
     #[cfg(feature = "fastembed")]
     FastEmbed = 0,
-    #[cfg(feature = "remote")]
-    Remote = 1,
+    #[cfg(feature = "grpc")]
+    Grpc = 1,
 }
 
 pub trait Embedder: Send + Sync {

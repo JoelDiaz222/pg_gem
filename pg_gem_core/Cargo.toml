@@ -7,8 +7,8 @@ edition = "2024"
 crate-type = ["staticlib"]
 
 [features]
-default = ["fastembed"]
-remote = ["prost", "tonic", "tokio", "tonic-prost", "tonic-prost-build"]
+default = ["fastembed", "grpc"]
+grpc = ["prost", "tonic", "tokio", "tonic-prost", "tonic-prost-build"]
 
 [dependencies]
 anyhow = "1.0.100"

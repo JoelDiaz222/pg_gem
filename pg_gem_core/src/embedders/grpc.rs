@@ -1,6 +1,6 @@
-#![cfg(feature = "remote")]
-use crate::embedders::remote::tei::v1::embed_client::EmbedClient;
-use crate::embedders::remote::tei::v1::EmbedBatchRequest;
+#![cfg(feature = "grpc")]
+use crate::embedders::grpc::tei::v1::embed_client::EmbedClient;
+use crate::embedders::grpc::tei::v1::EmbedBatchRequest;
 use crate::embedders::{EmbedMethod, Embedder, EMBEDDERS};
 use anyhow::Result;
 use std::os::raw::c_float;
@@ -16,7 +16,7 @@ pub mod tei {
 }
 
 #[unsafe(no_mangle)]
-pub static EMBED_METHOD_REMOTE: i32 = EmbedMethod::Remote as i32;
+pub static EMBED_METHOD_GRPC: i32 = EmbedMethod::Grpc as i32;
 
 static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
     tokio::runtime::Builder::new_current_thread()
@@ -38,9 +38,9 @@ thread_local! {
     static CLIENT: std::cell::RefCell<Option<EmbedClient<Channel>>> = std::cell::RefCell::new(None);
 }
 
-struct RemoteEmbedder;
+struct GrpcEmbedder;
 
-impl RemoteEmbedder {
+impl GrpcEmbedder {
     fn get_grpc_client() -> Result<EmbedClient<Channel>> {
         CLIENT.with(|cell| {
             let mut client_opt = cell.borrow_mut();
@@ -53,13 +53,13 @@ impl RemoteEmbedder {
     }
 }
 
-impl Embedder for RemoteEmbedder {
+impl Embedder for GrpcEmbedder {
     fn method(&self) -> EmbedMethod {
-        EmbedMethod::Remote
+        EmbedMethod::Grpc
     }
 
     fn embed(&self, model: &str, text_slices: Vec<&str>) -> Result<(Vec<f32>, usize, usize)> {
-        let mut client = RemoteEmbedder::get_grpc_client()?;
+        let mut client = GrpcEmbedder::get_grpc_client()?;
 
         let response = RUNTIME.block_on(async {
             let request = EmbedBatchRequest {
@@ -96,4 +96,4 @@ impl Embedder for RemoteEmbedder {
 }
 
 #[linkme::distributed_slice(EMBEDDERS)]
-static REMOTE: &dyn Embedder = &RemoteEmbedder;
+static GRPC: &dyn Embedder = &GrpcEmbedder;
