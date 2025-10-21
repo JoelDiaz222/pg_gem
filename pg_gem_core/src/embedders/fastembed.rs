@@ -13,6 +13,11 @@ thread_local! {
 
 struct FastEmbedder;
 
+impl FastEmbedder {
+    const ALLOWLIST: &'static [EmbeddingModel] =
+        &[EmbeddingModel::AllMiniLML6V2, EmbeddingModel::BGELargeENV15];
+}
+
 impl Embedder for FastEmbedder {
     fn method(&self) -> EmbedMethod {
         EmbedMethod::FastEmbed
@@ -34,6 +39,13 @@ impl Embedder for FastEmbedder {
 
             model_instance.embed_flat(text_slices, None)
         })
+    }
+
+    fn is_model_allowed(&self, model: &str) -> bool {
+        match EmbeddingModel::from_str(model) {
+            Ok(m) => Self::ALLOWLIST.contains(&m),
+            Err(_) => false,
+        }
     }
 }
 

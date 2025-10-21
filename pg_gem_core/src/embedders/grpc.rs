@@ -41,6 +41,11 @@ thread_local! {
 struct GrpcEmbedder;
 
 impl GrpcEmbedder {
+    const ALLOWLIST: &'static [&'static str] = &[
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "sentence-transformers/bge-large-en-v1.5",
+    ];
+
     fn get_grpc_client() -> Result<EmbedClient<Channel>> {
         CLIENT.with(|cell| {
             let mut client_opt = cell.borrow_mut();
@@ -92,6 +97,10 @@ impl Embedder for GrpcEmbedder {
         }
 
         Ok((flat, n_vectors, dim))
+    }
+
+    fn is_model_allowed(&self, model: &str) -> bool {
+        Self::ALLOWLIST.contains(&model)
     }
 }
 

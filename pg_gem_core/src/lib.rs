@@ -10,7 +10,8 @@ const ERR_INVALID_POINTERS: c_int = -1;
 const ERR_EMPTY_INPUT: c_int = -2;
 const ERR_INVALID_UTF8: c_int = -3;
 const ERR_INVALID_METHOD: c_int = -4;
-const ERR_EMBEDDING_FAILED: c_int = -5;
+const ERR_MODEL_NOT_ALLOWED: c_int = -5;
+const ERR_EMBEDDING_FAILED: c_int = -6;
 
 #[repr(C)]
 pub struct StringSlice {
@@ -56,6 +57,10 @@ pub extern "C" fn generate_embeddings_from_texts(
         Some(e) => e,
         None => return ERR_INVALID_METHOD,
     };
+
+    if !embedder.is_model_allowed(model_str) {
+        return ERR_MODEL_NOT_ALLOWED;
+    }
 
     let result = embedder.embed(model_str, text_slices);
 
