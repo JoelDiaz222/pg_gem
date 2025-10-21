@@ -21,7 +21,7 @@ pub fn generate_embeddings_fastembed(
 
                 let model_instance = TextEmbedding::try_new(
                     InitOptions::new(embedding_model)
-                        .with_cache_dir(PathBuf::from("/fastembed_models")),
+                        .with_cache_dir(PathBuf::from("./fastembed_models")),
                 )?;
 
                 models.insert(model.to_string(), model_instance);

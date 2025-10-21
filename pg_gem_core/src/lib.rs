@@ -40,6 +40,11 @@ pub enum EmbedMethod {
 }
 
 #[unsafe(no_mangle)]
+pub static EMBED_METHOD_FASTEMBED: i32 = EmbedMethod::FastEmbed as i32;
+#[unsafe(no_mangle)]
+pub static EMBED_METHOD_REMOTE: i32 = EmbedMethod::Remote as i32;
+
+#[unsafe(no_mangle)]
 pub extern "C" fn generate_embeddings_from_texts(
     method: c_int,
     model: *const c_char,
@@ -79,8 +84,8 @@ pub extern "C" fn generate_embeddings_from_texts(
     };
 
     let result: Result<(Vec<f32>, usize, usize)> = match method {
-        0 => generate_embeddings_fastembed(model_str, text_slices),
-        1 => generate_embeddings_remote(model_str, text_slices),
+        x if x == EMBED_METHOD_FASTEMBED => generate_embeddings_fastembed(model_str, text_slices),
+        x if x == EMBED_METHOD_REMOTE => generate_embeddings_remote(model_str, text_slices),
         _ => return ERR_INVALID_METHOD,
     };
 

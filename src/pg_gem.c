@@ -7,9 +7,6 @@
 #include "catalog/namespace.h"
 #include "vector.h"
 
-#define EMBED_METHOD_FASTEMBED 0
-#define EMBED_METHOD_REMOTE 1
-
 PG_MODULE_MAGIC;
 
 typedef struct
@@ -25,6 +22,9 @@ typedef struct
     size_t len;
 } StringSlice;
 
+extern const int EMBED_METHOD_FASTEMBED;
+extern const int EMBED_METHOD_REMOTE;
+
 extern int generate_embeddings_from_texts(
     int method,
     const char *model,
@@ -36,6 +36,16 @@ extern int generate_embeddings_from_texts(
 extern void free_embedding_batch(EmbeddingBatch *batch);
 
 PG_FUNCTION_INFO_V1(generate_embeddings);
+
+static int get_embedding_method_value(char *method_str)
+{
+    if (strcmp(method_str, "fastembed") == 0)
+        return EMBED_METHOD_FASTEMBED;
+    else if (strcmp(method_str, "remote") == 0)
+        return EMBED_METHOD_REMOTE;
+    else
+        elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
+}
 
 Datum generate_embeddings(PG_FUNCTION_ARGS)
 {
@@ -50,12 +60,7 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
     char *method_str = text_to_cstring(method_text);
     char *model_str = text_to_cstring(model_text);
 
-    if (strcmp(method_str, "fastembed") == 0)
-        method = EMBED_METHOD_FASTEMBED;
-    else if (strcmp(method_str, "remote") == 0)
-        method = EMBED_METHOD_REMOTE;
-    else
-        elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
+    method = get_embedding_method_value(method_str);
 
     deconstruct_array(
         input_array,
@@ -155,12 +160,7 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
         char *method_str = text_to_cstring(method_text);
         char *model_str = text_to_cstring(model_text);
 
-        if (strcmp(method_str, "fastembed") == 0)
-            method = EMBED_METHOD_FASTEMBED;
-        else if (strcmp(method_str, "remote") == 0)
-            method = EMBED_METHOD_REMOTE;
-        else
-            elog(ERROR, "Invalid embedding method: %s (use 'remote' or 'fastembed')", method_str);
+        method = get_embedding_method_value(method_str);
 
         deconstruct_array(ids_array, INT4OID, 4, true, 'i',
                           &id_elems, &id_nulls, &n_ids);

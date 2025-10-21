@@ -46,6 +46,7 @@ CREATE EXTENSION pg_gem;
 -- Generate embeddings using local FastEmbed model
 SELECT generate_embeddings(
                'fastembed',
+               'Qdrant/all-MiniLM-L6-v2-onnx',
                ARRAY ['Hello world', 'Embedding in PostgreSQL']
        );
 ```
@@ -60,6 +61,7 @@ INSERT INTO documents (id, embedding)
 SELECT sentence_id, embedding
 FROM generate_embeddings_with_ids(
         'fastembed',
+        'Qdrant/all-MiniLM-L6-v2-onnx',
         ARRAY [1, 2, 3],
         ARRAY ['First document', 'Second document', 'Third document']
      );
@@ -81,7 +83,7 @@ CREATE TABLE articles
 INSERT INTO articles (title, content, embedding)
 SELECT title,
        content,
-       (generate_embeddings('fastembed', ARRAY [content]))[1]
+       (generate_embeddings('fastembed', 'Qdrant/all-MiniLM-L6-v2-onnx', ARRAY [content]))[1]
 FROM (VALUES ('Understanding Transformers', 'Transformers have revolutionized NLP by using attention mechanisms.'),
              ('Graph Neural Networks', 'GNNs operate on graph structures to capture relationships.'),
              ('Reinforcement Learning Basics',
@@ -91,7 +93,8 @@ FROM (VALUES ('Understanding Transformers', 'Transformers have revolutionized NL
 SELECT id,
        title,
        content,
-       embedding <=> (SELECT (generate_embeddings('fastembed', ARRAY ['machine learning']))[1]) AS distance
+       embedding <=> (SELECT (generate_embeddings('fastembed', 'Qdrant/all-MiniLM-L6-v2-onnx',
+                                                  ARRAY ['machine learning']))[1]) AS distance
 FROM articles
 ORDER BY distance
 LIMIT 10;
