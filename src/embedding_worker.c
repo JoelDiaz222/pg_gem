@@ -1,14 +1,16 @@
 /* -------------------------------------------------------------------------
  *
  * embedding_worker.c
- * Background worker for automatic embedding generation
+ * Background worker implementation for automatic embedding generation.
  *
  * This worker monitors specified tables and generates embeddings for
  * text columns, storing results in designated embedding columns.
  *
  * -------------------------------------------------------------------------
  */
-#include "postgres.h"
+/* Header files of this project */
+#include "embedding_worker.h"
+#include "pg_gem.h"
 
 /* These are always necessary for a bgworker */
 #include "miscadmin.h"
@@ -16,7 +18,7 @@
 #include "postmaster/interrupt.h"
 #include "storage/latch.h"
 
-/* these headers are used by this particular worker's code */
+/* These headers are used by this particular worker's code */
 #include "access/xact.h"
 #include "executor/spi.h"
 #include "fmgr.h"
@@ -25,30 +27,8 @@
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/snapmgr.h"
-#include "pg_gem.h"
 
 PGDLLEXPORT void embedding_worker_main(Datum main_arg);
-
-/* GUC variables */
-static int embedding_worker_naptime = 10;  /* Check interval in seconds */
-static int embedding_worker_batch_size = 256;  /* Process N rows at a time */
-
-/* value cached, fetched from shared memory */
-static uint32 embedding_worker_wait_event_main = 0;
-
-typedef struct EmbeddingJob
-{
-    int job_id;
-    char *source_schema;
-    char *source_table;
-    char *source_column;
-    char *source_id_column;
-    char *target_schema;
-    char *target_table;
-    char *target_column;
-    char *method;
-    char *model;
-} EmbeddingJob;
 
 /*
  * Load all active jobs from the jobs table
