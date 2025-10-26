@@ -1,4 +1,4 @@
-# pg_gem
+# pg_gembed
 
 ## Generate Embeddings directly in PostgreSQL
 
@@ -25,8 +25,8 @@ local embedding generation using FastEmbed-rs, or through a local gRPC server.
 ### Build from Source
 
 ```bash
-git clone https://github.com/JoelDiaz222/pg_gem
-cd pg_gem
+git clone https://github.com/JoelDiaz222/pg_gembed
+cd pg_gembed
 
 make install
 ```
@@ -35,7 +35,7 @@ make install
 
 ```sql
 CREATE EXTENSION vector;
-CREATE EXTENSION pg_gem;
+CREATE EXTENSION pg_gembed;
 ```
 
 ## Usage

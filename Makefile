@@ -1,7 +1,7 @@
-MODULE_big = pg_gem
-OBJS = src/pg_gem.o src/embedding_worker.o
+MODULE_big = pg_gembed
+OBJS = src/pg_gembed.o src/embedding_worker.o
 
-EXTENSION = pg_gem
+EXTENSION = pg_gembed
 EXTVERSION = 0.1.0
 DATA = sql/$(EXTENSION)--$(EXTVERSION).sql
 

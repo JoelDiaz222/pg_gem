@@ -1,4 +1,4 @@
-#include "pg_gem.h"
+#include "pg_gembed.h"
 #include "postgres.h"
 #include "fmgr.h"
 #include "funcapi.h"

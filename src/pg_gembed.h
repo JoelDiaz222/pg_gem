@@ -1,5 +1,5 @@
-#ifndef PG_GEM_H
-#define PG_GEM_H
+#ifndef PG_GEMBED_H
+#define PG_GEMBED_H
 
 #include "stddef.h"
 
@@ -36,4 +36,4 @@ extern int generate_embeddings_from_texts(
 /* Frees memory allocated for an embedding batch */
 extern void free_embedding_batch(EmbeddingBatch *batch);
 
-#endif /* PG_GEM_H */
+#endif /* PG_GEMBED_H */

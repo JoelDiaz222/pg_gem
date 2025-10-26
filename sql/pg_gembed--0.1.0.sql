@@ -30,9 +30,9 @@ STRICT
 PARALLEL SAFE;
 
 -- Background worker schema and tables
-CREATE SCHEMA IF NOT EXISTS gem_jobs;
+CREATE SCHEMA IF NOT EXISTS gembed;
 
-CREATE TABLE gem_jobs.embedding_jobs (
+CREATE TABLE gembed.embedding_jobs (
     job_id            SERIAL    PRIMARY KEY,
     source_schema     TEXT      DEFAULT 'public',
     source_table      TEXT      NOT NULL,
@@ -50,18 +50,11 @@ CREATE TABLE gem_jobs.embedding_jobs (
 );
 
 CREATE INDEX idx_jobs_enabled
-    ON gem_jobs.embedding_jobs (enabled)
+    ON gembed.embedding_jobs (enabled)
     WHERE enabled = true;
 
-CREATE FUNCTION embedding_worker_launch()
-RETURNS integer
-AS
-'MODULE_PATHNAME',
-'embedding_worker_launch'
-LANGUAGE C;
-
 -- View for job status
-CREATE VIEW gem_jobs.job_status AS
+CREATE VIEW gembed.job_status AS
 SELECT
     j.job_id,
     j.source_schema || '.' || j.source_table || '.' || j.source_column AS source,
@@ -78,4 +71,4 @@ SELECT
         WHEN j.enabled THEN 'active'
         ELSE 'disabled'
     END AS status
-FROM gem_jobs.embedding_jobs j;
+FROM gembed.embedding_jobs j;

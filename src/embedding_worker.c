@@ -10,7 +10,7 @@
  */
 /* Header files of this project */
 #include "embedding_worker.h"
-#include "pg_gem.h"
+#include "pg_gembed.h"
 
 /* These are always necessary for a bgworker */
 #include "miscadmin.h"
@@ -86,7 +86,7 @@ load_embedding_jobs(void)
         "SELECT job_id, source_schema, source_table, source_column, "
         "       source_id_column, target_schema, target_table, "
         "       target_column, method, model "
-        "FROM gem_jobs.embedding_jobs "
+        "FROM gembed.embedding_jobs "
         "WHERE enabled = true");
 
     ret = SPI_execute(buf.data, true, 0);
@@ -118,7 +118,7 @@ get_last_processed_id(int job_id)
 
     initStringInfo(&buf);
     appendStringInfo(&buf,
-        "SELECT last_processed_id FROM gem_jobs.embedding_jobs WHERE job_id = %d",
+        "SELECT last_processed_id FROM gembed.embedding_jobs WHERE job_id = %d",
         job_id);
 
     ret = SPI_execute(buf.data, true, 0);
@@ -359,7 +359,7 @@ update_last_processed_id(int job_id, int max_id)
 
     initStringInfo(&buf);
     appendStringInfo(&buf,
-        "UPDATE gem_jobs.embedding_jobs "
+        "UPDATE gembed.embedding_jobs "
         "SET last_processed_id = %d, last_run_at = CURRENT_TIMESTAMP "
         "WHERE job_id = %d",
         max_id, job_id);
@@ -655,7 +655,8 @@ embedding_worker_main(Datum _)
 static void
 define_guc_variables(void)
 {
-    DefineCustomIntVariable("pg_gem.embedding_worker_naptime",
+    MarkGUCPrefixReserved("gembed");
+    DefineCustomIntVariable("gembed.embedding_worker_naptime",
                            "Duration between each check (in seconds).",
                            NULL,
                            &embedding_worker_naptime,
@@ -666,7 +667,7 @@ define_guc_variables(void)
                            0,
                            NULL, NULL, NULL);
 
-    DefineCustomIntVariable("pg_gem.embedding_worker_batch_size",
+    DefineCustomIntVariable("gembed.embedding_worker_batch_size",
                            "Number of rows to process per batch.",
                            NULL,
                            &embedding_worker_batch_size,
@@ -690,14 +691,14 @@ register_background_worker(void)
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    sprintf(worker.bgw_library_name, "pg_gem");
+    sprintf(worker.bgw_library_name, "pg_gembed");
     sprintf(worker.bgw_function_name, "embedding_worker_main");
-    snprintf(worker.bgw_name, BGW_MAXLEN, "pg_gem embedding worker");
-    snprintf(worker.bgw_type, BGW_MAXLEN, "pg_gem_embedding_worker");
+    snprintf(worker.bgw_name, BGW_MAXLEN, "pg_gembed embedding worker");
+    snprintf(worker.bgw_type, BGW_MAXLEN, "pg_gembed_embedding_worker");
     worker.bgw_notify_pid = 0;
 
     RegisterBackgroundWorker(&worker);
-    elog(LOG, "pg_gem background worker registered.");
+    elog(LOG, "pg_gembed background worker registered.");
 }
 
 /*
@@ -714,6 +715,5 @@ _PG_init(void)
         return;
     }
 
-    MarkGUCPrefixReserved("pg_gem");
     register_background_worker();
 }
