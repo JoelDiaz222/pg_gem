@@ -45,10 +45,10 @@ CREATE EXTENSION pg_gem;
 ```sql
 -- Generate embeddings using local FastEmbed model
 SELECT generate_embeddings(
-               'fastembed',
-               'Qdrant/all-MiniLM-L6-v2-onnx',
-               ARRAY ['Hello world', 'Embedding in PostgreSQL']
-       );
+    'fastembed',
+    'Qdrant/all-MiniLM-L6-v2-onnx',
+    ARRAY ['Hello world', 'Embedding in PostgreSQL']
+);
 ```
 
 Returns an array of `vector` types compatible with pgvector.
@@ -60,11 +60,11 @@ Returns an array of `vector` types compatible with pgvector.
 INSERT INTO documents (id, embedding)
 SELECT sentence_id, embedding
 FROM generate_embeddings_with_ids(
-        'fastembed',
-        'Qdrant/all-MiniLM-L6-v2-onnx',
-        ARRAY [1, 2, 3],
-        ARRAY ['First document', 'Second document', 'Third document']
-     );
+    'fastembed',
+    'Qdrant/all-MiniLM-L6-v2-onnx',
+    ARRAY [1, 2, 3],
+    ARRAY ['First document', 'Second document', 'Third document']
+);
 ```
 
 ### Semantic Search Example

@@ -1,5 +1,5 @@
 MODULE_big = pg_gem
-OBJS = src/pg_gem.o
+OBJS = src/pg_gem.o src/embedding_worker.o
 
 EXTENSION = pg_gem
 EXTVERSION = 0.1.0
@@ -23,11 +23,11 @@ SHLIB_LINK = \
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-$(MODULE_big).dylib: $(RUST_LIB)
+$(MODULE_big).dylib: $(OBJS) $(RUST_LIB)
 
 $(RUST_LIB):
 	cd $(RUST_DIR) && cargo build --release
 
 clean:
-	rm -f $(OBJS) $(MODULE_big).dylib lib$(MODULE_big).a lib$(MODULE_big).pc
+	rm -f $(OBJS) $(MODULE_big).dylib
 	cd $(RUST_DIR) && cargo clean
