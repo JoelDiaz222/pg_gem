@@ -19,13 +19,6 @@ extern void embedding_worker_main(Datum main_arg);
 /* Module initialization function */
 extern void _PG_init(void);
 
-/* GUC variable declarations */
-extern int embedding_worker_naptime;
-extern int embedding_worker_batch_size;
-
-/* Wait event identifier cached from shared memory */
-extern uint32 embedding_worker_wait_event_main;
-
 /* Structure representing an embedding job */
 typedef struct EmbeddingJob
 {

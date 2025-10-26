@@ -30,6 +30,45 @@
 
 PGDLLEXPORT void embedding_worker_main(Datum main_arg);
 
+/* GUC variable declarations */
+static int embedding_worker_naptime = 1000;
+static int embedding_worker_batch_size = 100;
+
+/* Wait event identifier cached from shared memory */
+static uint32 embedding_worker_wait_event_main = 0;
+
+/* -------------------------------------------------------------------------
+ * Helper Functions
+ * -------------------------------------------------------------------------
+ */
+
+/*
+ * Parse a single job row from the jobs table
+ */
+static EmbeddingJob *
+parse_job_tuple(HeapTuple tuple, TupleDesc tupdesc)
+{
+    EmbeddingJob *job = (EmbeddingJob *)palloc(sizeof(EmbeddingJob));
+    bool isnull;
+
+    job->job_id = DatumGetInt32(SPI_getbinval(tuple, tupdesc, 1, &isnull));
+    job->source_schema = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 2, &isnull));
+    job->source_table = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 3, &isnull));
+    job->source_column = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 4, &isnull));
+    job->source_id_column = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 5, &isnull));
+    job->target_schema = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 6, &isnull));
+    job->target_table = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 7, &isnull));
+    job->target_column = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 8, &isnull));
+    job->method = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 9, &isnull));
+    job->model = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 10, &isnull));
+
+    elog(DEBUG1, "Loaded job ID %d (%s.%s -> %s.%s)",
+         job->job_id, job->source_schema, job->source_table,
+         job->target_schema, job->target_table);
+
+    return job;
+}
+
 /*
  * Load all active jobs from the jobs table
  */
@@ -58,26 +97,8 @@ load_embedding_jobs(void)
 
     for (uint64 i = 0; i < SPI_processed; i++)
     {
-        HeapTuple tuple = SPI_tuptable->vals[i];
-        TupleDesc tupdesc = SPI_tuptable->tupdesc;
-        EmbeddingJob *job = (EmbeddingJob *)palloc(sizeof(EmbeddingJob));
-        bool isnull;
-
-        job->job_id = DatumGetInt32(SPI_getbinval(tuple, tupdesc, 1, &isnull));
-        job->source_schema = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 2, &isnull));
-        job->source_table = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 3, &isnull));
-        job->source_column = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 4, &isnull));
-        job->source_id_column = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 5, &isnull));
-        job->target_schema = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 6, &isnull));
-        job->target_table = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 7, &isnull));
-        job->target_column = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 8, &isnull));
-        job->method = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 9, &isnull));
-        job->model = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 10, &isnull));
-
-        elog(DEBUG1, "Loaded job ID %d (%s.%s -> %s.%s)",
-             job->job_id, job->source_schema, job->source_table,
-             job->target_schema, job->target_table);
-
+        EmbeddingJob *job = parse_job_tuple(SPI_tuptable->vals[i],
+                                            SPI_tuptable->tupdesc);
         jobs = lappend(jobs, job);
     }
 
@@ -85,47 +106,41 @@ load_embedding_jobs(void)
 }
 
 /*
- * Process a specific embedding job
+ * Get the last processed ID for a job
  */
-static void
-process_embedding_job(EmbeddingJob *job)
+static int
+get_last_processed_id(int job_id)
 {
     int ret;
     StringInfoData buf;
     int last_processed_id = 0;
     bool isnull;
-    int n_rows;
-    int *ids = NULL;
-    StringSlice *texts = NULL;
-    int max_id;
-    int i;
-    int method_id;
-    int model_id;
-    EmbeddingBatch batch;
-    int err;
 
-    elog(LOG, "Starting to process job ID: %d (%s.%s.%s -> %s.%s.%s)",
-         job->job_id, job->source_schema, job->source_table, job->source_column,
-         job->target_schema, job->target_table, job->target_column);
-
-    /* Get last processed ID */
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "SELECT last_processed_id FROM gem_jobs.embedding_jobs WHERE job_id = %d",
-        job->job_id);
+        job_id);
 
     ret = SPI_execute(buf.data, true, 0);
     if (ret == SPI_OK_SELECT && SPI_processed > 0)
     {
-        Datum datum = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
+        Datum datum = SPI_getbinval(SPI_tuptable->vals[0],
+                                    SPI_tuptable->tupdesc, 1, &isnull);
         if (!isnull)
             last_processed_id = DatumGetInt32(datum);
     }
-    elog(DEBUG1, "Job %d: last_processed_id is %d", job->job_id, last_processed_id);
 
-    /* Find rows needing embeddings */
-    resetStringInfo(&buf);
-    appendStringInfo(&buf,
+    elog(DEBUG1, "Job %d: last_processed_id is %d", job_id, last_processed_id);
+    return last_processed_id;
+}
+
+/*
+ * Build query to find rows needing embeddings
+ */
+static void
+build_pending_rows_query(StringInfo buf, EmbeddingJob *job, int last_processed_id)
+{
+    appendStringInfo(buf,
         "SELECT s.%s, s.%s "
         "FROM %s.%s s "
         "LEFT JOIN %s.%s t ON s.%s = t.%s "
@@ -146,6 +161,248 @@ process_embedding_job(EmbeddingJob *job)
         quote_identifier(job->target_column),
         quote_identifier(job->source_id_column),
         embedding_worker_batch_size);
+}
+
+/*
+ * Extract IDs and texts from query results
+ * Returns the maximum ID found, or -1 on error
+ */
+static int
+extract_ids_and_texts(int job_id, int n_rows, int **ids_out,
+                      StringSlice **texts_out, int last_processed_id)
+{
+    int *ids = (int *)palloc(sizeof(int) * n_rows);
+    StringSlice *texts = (StringSlice *)palloc(sizeof(StringSlice) * n_rows);
+    int max_id = last_processed_id;
+    int i;
+
+    for (i = 0; i < n_rows; i++)
+    {
+        HeapTuple tuple = SPI_tuptable->vals[i];
+        TupleDesc tupdesc = SPI_tuptable->tupdesc;
+        text *t;
+        Datum datum;
+        bool isnull;
+
+        /* Get ID with null check */
+        datum = SPI_getbinval(tuple, tupdesc, 1, &isnull);
+        if (isnull)
+        {
+            elog(WARNING, "Job %d: NULL id column at row %d, skipping", job_id, i);
+            pfree(ids);
+            pfree(texts);
+            return -1;
+        }
+        ids[i] = DatumGetInt32(datum);
+        if (ids[i] > max_id)
+            max_id = ids[i];
+
+        /* Get text with null check */
+        datum = SPI_getbinval(tuple, tupdesc, 2, &isnull);
+        if (isnull)
+        {
+            elog(WARNING, "Job %d: NULL text column at row %d (id=%d), skipping",
+                 job_id, i, ids[i]);
+            pfree(ids);
+            pfree(texts);
+            return -1;
+        }
+
+        t = DatumGetTextPP(datum);
+        texts[i].ptr = VARDATA_ANY(t);
+        texts[i].len = VARSIZE_ANY_EXHDR(t);
+
+        if (texts[i].len == 0)
+        {
+            elog(WARNING, "Job %d: Empty text at row %d (id=%d)",
+                 job_id, i, ids[i]);
+        }
+    }
+
+    *ids_out = ids;
+    *texts_out = texts;
+    return max_id;
+}
+
+/*
+ * Validate method and model for a job
+ * Returns true if valid, false otherwise
+ */
+static bool
+validate_job_method_and_model(EmbeddingJob *job, int *method_id_out,
+                               int *model_id_out)
+{
+    int method_id, model_id;
+    method_id = validate_embedding_method(job->method);
+    if (method_id < 0)
+    {
+        elog(WARNING, "invalid method '%s' for job %d", job->method, job->job_id);
+        return false;
+    }
+
+    model_id = validate_embedding_model(method_id, job->model);
+    if (model_id < 0)
+    {
+        elog(WARNING, "invalid model '%s' for job %d", job->model, job->job_id);
+        return false;
+    }
+
+    *method_id_out = method_id;
+    *model_id_out = model_id;
+    return true;
+}
+
+/*
+ * Build a vector literal string from embedding data
+ */
+static void
+build_vector_literal(StringInfo vec_str, const EmbeddingBatch *batch, int idx)
+{
+    size_t j;
+
+    appendStringInfoChar(vec_str, '[');
+    for (j = 0; j < batch->dim; j++)
+    {
+        if (j > 0)
+            appendStringInfoChar(vec_str, ',');
+        appendStringInfo(vec_str, "%.9g", batch->data[idx * batch->dim + j]);
+    }
+    appendStringInfoChar(vec_str, ']');
+}
+
+/*
+ * Update or insert a single embedding
+ */
+static void
+upsert_embedding(EmbeddingJob *job, int id, const char *vec_literal)
+{
+    StringInfoData buf;
+    int ret;
+
+    initStringInfo(&buf);
+
+    /* Try UPDATE first */
+    appendStringInfo(&buf,
+        "UPDATE %s.%s SET %s = %s::vector WHERE %s = %d",
+        quote_identifier(job->target_schema),
+        quote_identifier(job->target_table),
+        quote_identifier(job->target_column),
+        quote_literal_cstr(vec_literal),
+        quote_identifier(job->source_id_column),
+        id);
+
+    elog(DEBUG2, "Job %d: Updating embedding for source ID %d.", job->job_id, id);
+
+    ret = SPI_execute(buf.data, false, 0);
+
+    /* If no rows updated, insert instead */
+    if (ret == SPI_OK_UPDATE && SPI_processed == 0)
+    {
+        resetStringInfo(&buf);
+
+        appendStringInfo(&buf,
+            "INSERT INTO %s.%s (%s, %s) VALUES (%d, %s::vector)",
+            quote_identifier(job->target_schema),
+            quote_identifier(job->target_table),
+            quote_identifier(job->source_id_column),
+            quote_identifier(job->target_column),
+            id,
+            quote_literal_cstr(vec_literal));
+
+        elog(DEBUG2, "Job %d: Inserting new embedding for source ID %d.",
+             job->job_id, id);
+
+        ret = SPI_execute(buf.data, false, 0);
+        if (ret != SPI_OK_INSERT)
+        {
+            elog(WARNING, "failed to insert embedding for id %d in job %d: %s",
+                 id, job->job_id, SPI_result_code_string(ret));
+        }
+    }
+    else if (ret != SPI_OK_UPDATE)
+    {
+        elog(WARNING, "failed to update embedding for id %d in job %d: %s",
+             id, job->job_id, SPI_result_code_string(ret));
+    }
+}
+
+/*
+ * Store all embeddings from a batch
+ */
+static void
+store_embeddings(EmbeddingJob *job, const EmbeddingBatch *batch,
+                 const int *ids, int n_rows)
+{
+    int i;
+
+    for (i = 0; i < (int)batch->n_vectors && i < n_rows; i++)
+    {
+        StringInfoData vec_str;
+
+        initStringInfo(&vec_str);
+        build_vector_literal(&vec_str, batch, i);
+        upsert_embedding(job, ids[i], vec_str.data);
+    }
+
+    elog(DEBUG1, "Job %d: Finished inserting/updating %zu embeddings.",
+         job->job_id, batch->n_vectors);
+}
+
+/*
+ * Update the last processed ID for a job
+ */
+static void
+update_last_processed_id(int job_id, int max_id)
+{
+    StringInfoData buf;
+    int ret;
+
+    initStringInfo(&buf);
+    appendStringInfo(&buf,
+        "UPDATE gem_jobs.embedding_jobs "
+        "SET last_processed_id = %d, last_run_at = CURRENT_TIMESTAMP "
+        "WHERE job_id = %d",
+        max_id, job_id);
+
+    ret = SPI_execute(buf.data, false, 0);
+    if (ret != SPI_OK_UPDATE)
+        elog(WARNING, "failed to update last_processed_id for job %d", job_id);
+
+    elog(DEBUG1, "Job %d: Updated last_processed_id to %d.", job_id, max_id);
+}
+
+/* -------------------------------------------------------------------------
+ * Main Job Processing
+ * -------------------------------------------------------------------------
+ */
+
+/*
+ * Process a specific embedding job
+ */
+static void
+process_embedding_job(EmbeddingJob *job)
+{
+    int ret;
+    StringInfoData buf;
+    int last_processed_id;
+    int n_rows;
+    int *ids = NULL;
+    StringSlice *texts = NULL;
+    int max_id;
+    int method_id, model_id;
+    EmbeddingBatch batch;
+    int err;
+
+    elog(LOG, "Starting to process job ID: %d (%s.%s.%s -> %s.%s.%s)",
+         job->job_id, job->source_schema, job->source_table, job->source_column,
+         job->target_schema, job->target_table, job->target_column);
+
+    /* Get last processed ID */
+    last_processed_id = get_last_processed_id(job->job_id);
+
+    /* Find rows needing embeddings */
+    initStringInfo(&buf);
+    build_pending_rows_query(&buf, job, last_processed_id);
 
     ret = SPI_execute(buf.data, true, 0);
     if (ret != SPI_OK_SELECT)
@@ -161,70 +418,19 @@ process_embedding_job(EmbeddingJob *job)
         return;
     }
 
-    elog(LOG, "Job %d: Found %d new rows to process.", job->job_id, (int)SPI_processed);
+    elog(LOG, "Job %d: Found %d new rows to process.",
+         job->job_id, (int)SPI_processed);
 
-    /* Prepare data for embedding generation */
+    /* Extract data from results */
     n_rows = SPI_processed;
-    ids = (int *)palloc(sizeof(int) * n_rows);
-    texts = (StringSlice *)palloc(sizeof(StringSlice) * n_rows);
-    max_id = last_processed_id;
-
-    for (i = 0; i < n_rows; i++)
-    {
-        HeapTuple tuple = SPI_tuptable->vals[i];
-        TupleDesc tupdesc = SPI_tuptable->tupdesc;
-        text *t;
-        Datum datum;
-
-        /* Get ID with null check */
-        datum = SPI_getbinval(tuple, tupdesc, 1, &isnull);
-        if (isnull)
-        {
-            elog(WARNING, "Job %d: NULL id column at row %d, skipping", job->job_id, i);
-            pfree(ids);
-            pfree(texts);
-            return;
-        }
-        ids[i] = DatumGetInt32(datum);
-        if (ids[i] > max_id)
-            max_id = ids[i];
-
-        /* Get text with null check */
-        datum = SPI_getbinval(tuple, tupdesc, 2, &isnull);
-        if (isnull)
-        {
-            elog(WARNING, "Job %d: NULL text column at row %d (id=%d), skipping",
-                 job->job_id, i, ids[i]);
-            pfree(ids);
-            pfree(texts);
-            return;
-        }
-
-        t = DatumGetTextPP(datum);  /* Use DatumGetTextPP for proper detoasting */
-        texts[i].ptr = VARDATA_ANY(t);
-        texts[i].len = VARSIZE_ANY_EXHDR(t);
-
-        if (texts[i].len == 0)
-        {
-            elog(WARNING, "Job %d: Empty text at row %d (id=%d)",
-                 job->job_id, i, ids[i]);
-        }
-    }
+    max_id = extract_ids_and_texts(job->job_id, n_rows, &ids, &texts,
+                                   last_processed_id);
+    if (max_id < 0)
+        return;
 
     /* Validate method and model */
-    method_id = validate_embedding_method(job->method);
-    if (method_id < 0)
+    if (!validate_job_method_and_model(job, &method_id, &model_id))
     {
-        elog(WARNING, "invalid method '%s' for job %d", job->method, job->job_id);
-        pfree(ids);
-        pfree(texts);
-        return;
-    }
-
-    model_id = validate_embedding_model(method_id, job->model);
-    if (model_id < 0)
-    {
-        elog(WARNING, "invalid model '%s' for job %d", job->model, job->job_id);
         pfree(ids);
         pfree(texts);
         return;
@@ -233,14 +439,14 @@ process_embedding_job(EmbeddingJob *job)
     elog(DEBUG1, "Job %d: Generating embeddings for %d texts using %s with model %s.",
          job->job_id, n_rows, job->method, job->model);
 
+    /* Generate embeddings */
     err = generate_embeddings_from_texts(method_id, model_id, texts, n_rows, &batch);
-
     pfree(texts);
-    texts = NULL;
 
     if (err != 0)
     {
-        elog(WARNING, "embedding generation failed for job %d (code=%d)", job->job_id, err);
+        elog(WARNING, "embedding generation failed for job %d (code=%d)",
+             job->job_id, err);
         pfree(ids);
         return;
     }
@@ -257,92 +463,153 @@ process_embedding_job(EmbeddingJob *job)
     elog(DEBUG1, "Job %d: Successfully generated %zu embeddings with dimension %zu.",
          job->job_id, batch.n_vectors, batch.dim);
 
-    /* Store embeddings in target table */
-    for (i = 0; i < (int)batch.n_vectors && i < n_rows; i++)
-    {
-        StringInfoData upsert_buf;
-        StringInfoData vec_str;
-        size_t j;
-
-        initStringInfo(&upsert_buf);
-        initStringInfo(&vec_str);
-
-        /* Build vector literal - pre-allocate enough space */
-        appendStringInfoChar(&vec_str, '[');
-        for (j = 0; j < batch.dim; j++)
-        {
-            if (j > 0)
-                appendStringInfoChar(&vec_str, ',');
-            appendStringInfo(&vec_str, "%.9g", batch.data[i * batch.dim + j]);
-        }
-        appendStringInfoChar(&vec_str, ']');
-
-        /* Use UPDATE...WHERE or INSERT pattern that works without unique constraint */
-        appendStringInfo(&upsert_buf,
-            "UPDATE %s.%s SET %s = %s::vector WHERE %s = %d",
-            quote_identifier(job->target_schema),
-            quote_identifier(job->target_table),
-            quote_identifier(job->target_column),
-            quote_literal_cstr(vec_str.data),
-            quote_identifier(job->source_id_column),
-            ids[i]);
-
-        elog(DEBUG2, "Job %d: Updating embedding for source ID %d.", job->job_id, ids[i]);
-
-        ret = SPI_execute(upsert_buf.data, false, 0);
-
-        /* If no rows updated, insert instead */
-        if (ret == SPI_OK_UPDATE && SPI_processed == 0)
-        {
-            resetStringInfo(&upsert_buf);
-
-            appendStringInfo(&upsert_buf,
-                "INSERT INTO %s.%s (%s, %s) VALUES (%d, %s::vector)",
-                quote_identifier(job->target_schema),
-                quote_identifier(job->target_table),
-                quote_identifier(job->source_id_column),
-                quote_identifier(job->target_column),
-                ids[i],
-                quote_literal_cstr(vec_str.data));
-
-            elog(DEBUG2, "Job %d: Inserting new embedding for source ID %d.", job->job_id, ids[i]);
-
-            ret = SPI_execute(upsert_buf.data, false, 0);
-            if (ret != SPI_OK_INSERT)
-            {
-                elog(WARNING, "failed to insert embedding for id %d in job %d: %s",
-                     ids[i], job->job_id, SPI_result_code_string(ret));
-            }
-        }
-        else if (ret != SPI_OK_UPDATE)
-        {
-            elog(WARNING, "failed to update embedding for id %d in job %d: %s",
-                 ids[i], job->job_id, SPI_result_code_string(ret));
-        }
-
-        /* StringInfo data is automatically freed when memory context resets */
-    }
-
-    elog(DEBUG1, "Job %d: Finished inserting/updating %zu embeddings.", job->job_id, batch.n_vectors);
-
+    /* Store embeddings */
+    store_embeddings(job, &batch, ids, n_rows);
     free_embedding_batch(&batch);
     pfree(ids);
 
     /* Update last processed ID */
-    resetStringInfo(&buf);
-    appendStringInfo(&buf,
-        "UPDATE gem_jobs.embedding_jobs "
-        "SET last_processed_id = %d, last_run_at = CURRENT_TIMESTAMP "
-        "WHERE job_id = %d",
-        max_id, job->job_id);
-
-    ret = SPI_execute(buf.data, false, 0);
-    if (ret != SPI_OK_UPDATE)
-        elog(WARNING, "failed to update last_processed_id for job %d", job->job_id);
-
-    elog(DEBUG1, "Job %d: Updated last_processed_id to %d.", job->job_id, max_id);
+    update_last_processed_id(job->job_id, max_id);
 
     elog(LOG, "embedding_worker: processed %d rows for job %d", n_rows, job->job_id);
+}
+
+/* -------------------------------------------------------------------------
+ * Worker Main Loop and Initialization
+ * -------------------------------------------------------------------------
+ */
+
+/*
+ * Setup signal handlers and connect to database
+ */
+static void
+initialize_worker(void)
+{
+    pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
+    BackgroundWorkerUnblockSignals();
+    BackgroundWorkerInitializeConnection("joeldiaz", NULL, 0);
+    elog(LOG, "embedding_worker started with pid %d", MyProcPid);
+}
+
+/*
+ * Wait for next cycle or shutdown signal
+ */
+static void
+worker_wait_for_next_cycle(void)
+{
+    if (embedding_worker_wait_event_main == 0)
+        embedding_worker_wait_event_main = WaitEventExtensionNew("EmbeddingWorkerMain");
+
+    (void) WaitLatch(MyLatch,
+                    WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+                    embedding_worker_naptime * 1000L,
+                    embedding_worker_wait_event_main);
+    ResetLatch(MyLatch);
+}
+
+/*
+ * Handle configuration reload request
+ */
+static void
+handle_config_reload(void)
+{
+    if (ConfigReloadPending)
+    {
+        elog(LOG, "Configuration reload requested (SIGHUP).");
+        ConfigReloadPending = false;
+        ProcessConfigFile(PGC_SIGHUP);
+    }
+}
+
+/*
+ * Process all jobs with individual error handling
+ */
+static void
+process_all_jobs(List *jobs)
+{
+    ListCell *lc;
+
+    foreach(lc, jobs)
+    {
+        EmbeddingJob *job = (EmbeddingJob *)lfirst(lc);
+
+        PG_TRY();
+        {
+            process_embedding_job(job);
+        }
+        PG_CATCH();
+        {
+            ErrorData *edata = CopyErrorData();
+            FlushErrorState();
+            elog(WARNING, "Error processing job %d: %s",
+                 job->job_id, edata->message);
+            FreeErrorData(edata);
+        }
+        PG_END_TRY();
+
+        CHECK_FOR_INTERRUPTS();
+    }
+}
+
+/*
+ * Execute one cycle of job processing
+ */
+static void
+execute_job_cycle(void)
+{
+    List *jobs;
+
+    SetCurrentStatementStartTimestamp();
+    StartTransactionCommand();
+    SPI_connect();
+    PushActiveSnapshot(GetTransactionSnapshot());
+    pgstat_report_activity(STATE_RUNNING, "processing embedding jobs");
+
+    jobs = load_embedding_jobs();
+
+    if (list_length(jobs) == 0)
+    {
+        elog(LOG, "No active jobs found. Going back to sleep.");
+    }
+    else
+    {
+        process_all_jobs(jobs);
+    }
+
+    SPI_finish();
+    PopActiveSnapshot();
+    CommitTransactionCommand();
+    pgstat_report_stat(true);
+    pgstat_report_activity(STATE_IDLE, NULL);
+    elog(LOG, "Finished job processing cycle. Sleeping for %d seconds.",
+         embedding_worker_naptime);
+}
+
+/*
+ * Handle errors in the main loop
+ */
+static void
+handle_main_loop_error(void)
+{
+    ErrorData *edata = CopyErrorData();
+    FlushErrorState();
+    elog(WARNING, "Error in worker main loop: %s", edata->message);
+    FreeErrorData(edata);
+
+    /* Abort the transaction if still in progress */
+    PG_TRY();
+    {
+        AbortCurrentTransaction();
+    }
+    PG_CATCH();
+    {
+        FlushErrorState();
+    }
+    PG_END_TRY();
+
+    SPI_finish();
+    pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 /*
@@ -351,140 +618,43 @@ process_embedding_job(EmbeddingJob *job)
 void
 embedding_worker_main(Datum _)
 {
-    List *jobs;
-    ListCell *lc;
-
-    /* Establish signal handlers */
-    pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
-
-    BackgroundWorkerUnblockSignals();
-    /* Connect to database */
-    BackgroundWorkerInitializeConnection("joeldiaz", NULL, 0);
-
-    elog(LOG, "embedding_worker started with pid %d", MyProcPid);
+    initialize_worker();
 
     /* Main loop */
     for (;;)
     {
-        elog(DEBUG1, "Worker main loop started. Naptime: %d seconds.", embedding_worker_naptime);
+        elog(DEBUG1, "Worker main loop started. Naptime: %d seconds.",
+             embedding_worker_naptime);
 
-        if (embedding_worker_wait_event_main == 0)
-            embedding_worker_wait_event_main = WaitEventExtensionNew("EmbeddingWorkerMain");
-
-        (void) WaitLatch(MyLatch,
-                        WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
-                        embedding_worker_naptime * 1000L,
-                        embedding_worker_wait_event_main);
-        ResetLatch(MyLatch);
-
+        worker_wait_for_next_cycle();
         CHECK_FOR_INTERRUPTS();
+        handle_config_reload();
 
-        if (ConfigReloadPending)
-        {
-            elog(LOG, "Configuration reload requested (SIGHUP).");
-            ConfigReloadPending = false;
-            ProcessConfigFile(PGC_SIGHUP);
-        }
-
-        /* Start transaction and process jobs - with error handling */
         elog(LOG, "Worker waking up to check for jobs.");
 
         PG_TRY();
         {
-            SetCurrentStatementStartTimestamp();
-            StartTransactionCommand();
-            SPI_connect();
-            PushActiveSnapshot(GetTransactionSnapshot());
-            pgstat_report_activity(STATE_RUNNING, "processing embedding jobs");
-
-            jobs = load_embedding_jobs();
-
-            if (list_length(jobs) == 0)
-            {
-                elog(LOG, "No active jobs found. Going back to sleep.");
-            }
-            else
-            {
-                foreach(lc, jobs)
-                {
-                    EmbeddingJob *job = (EmbeddingJob *)lfirst(lc);
-
-                    /* Process each job with individual error handling */
-                    PG_TRY();
-                    {
-                        process_embedding_job(job);
-                    }
-                    PG_CATCH();
-                    {
-                        ErrorData *edata;
-
-                        /* Save error info */
-                        edata = CopyErrorData();
-                        FlushErrorState();
-
-                        /* Log the error but continue with other jobs */
-                        elog(WARNING, "Error processing job %d: %s",
-                             job->job_id, edata->message);
-
-                        FreeErrorData(edata);
-                    }
-                    PG_END_TRY();
-
-                    /* Add a small interrupt check between jobs */
-                    CHECK_FOR_INTERRUPTS();
-                }
-            }
-
-            SPI_finish();
-            PopActiveSnapshot();
-            CommitTransactionCommand();
-            pgstat_report_stat(true);
-            pgstat_report_activity(STATE_IDLE, NULL);
-            elog(LOG, "Finished job processing cycle. Sleeping for %d seconds.", embedding_worker_naptime);
+            execute_job_cycle();
         }
         PG_CATCH();
         {
-            ErrorData *edata;
-
-            /* Save error info */
-            edata = CopyErrorData();
-            FlushErrorState();
-
-            /* Log the error */
-            elog(WARNING, "Error in worker main loop: %s", edata->message);
-
-            FreeErrorData(edata);
-
-            /* Abort the transaction if still in progress */
-            PG_TRY();
-            {
-                AbortCurrentTransaction();
-            }
-            PG_CATCH();
-            {
-                /* Ignore errors during abort */
-                FlushErrorState();
-            }
-            PG_END_TRY();
-
-            /* Clean up SPI */
-            SPI_finish();
-
-            pgstat_report_activity(STATE_IDLE, NULL);
+            handle_main_loop_error();
         }
         PG_END_TRY();
     }
 }
 
-/*
- * Module initialization
+/* -------------------------------------------------------------------------
+ * Module Initialization
+ * -------------------------------------------------------------------------
  */
-void
-_PG_init(void)
-{
-    BackgroundWorker worker;
 
+/*
+ * Define GUC configuration variables
+ */
+static void
+define_guc_variables(void)
+{
     DefineCustomIntVariable("pg_gem.embedding_worker_naptime",
                            "Duration between each check (in seconds).",
                            NULL,
@@ -506,14 +676,15 @@ _PG_init(void)
                            PGC_SIGHUP,
                            0,
                            NULL, NULL, NULL);
+}
 
-    if (!process_shared_preload_libraries_in_progress)
-    {
-        elog(DEBUG1, "Skipping background worker registration; not in shared_preload_libraries context.");
-        return;
-    }
-
-    MarkGUCPrefixReserved("pg_gem");
+/*
+ * Register the background worker
+ */
+static void
+register_background_worker(void)
+{
+    BackgroundWorker worker;
 
     memset(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -527,4 +698,22 @@ _PG_init(void)
 
     RegisterBackgroundWorker(&worker);
     elog(LOG, "pg_gem background worker registered.");
+}
+
+/*
+ * Module initialization
+ */
+void
+_PG_init(void)
+{
+    define_guc_variables();
+
+    if (!process_shared_preload_libraries_in_progress)
+    {
+        elog(DEBUG1, "Skipping background worker registration; not in shared_preload_libraries context.");
+        return;
+    }
+
+    MarkGUCPrefixReserved("pg_gem");
+    register_background_worker();
 }
