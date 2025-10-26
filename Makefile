@@ -1,5 +1,5 @@
 MODULE_big = pg_gem
-OBJS = src/pg_gem.o
+OBJS = src/pg_gem.o src/bgworker.o
 
 EXTENSION = pg_gem
 EXTVERSION = 0.1.0
