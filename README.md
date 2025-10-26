@@ -25,7 +25,7 @@ local embedding generation using FastEmbed-rs, or through a local gRPC server.
 ### Build from Source
 
 ```bash
-git clone https://github.com/JoelDiaz222/pg_gembed
+git clone --recurse-submodules https://github.com/JoelDiaz222/pg_gembed
 cd pg_gembed
 
 make install

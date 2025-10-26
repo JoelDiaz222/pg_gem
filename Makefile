@@ -11,23 +11,23 @@ PG_CPPFLAGS = \
 	-I/opt/homebrew/include/postgresql@18/server \
 	-I/opt/homebrew/Cellar/pgvector/0.8.1/include/postgresql@18/server/extension/vector
 
-RUST_DIR = pg_gem_core
-RUST_TARGET = $(RUST_DIR)/target/release
-RUST_LIB = $(RUST_TARGET)/libpg_gem_core.dylib
+GEMBED_DIR = gembed
+GEMBED_TARGET = $(GEMBED_DIR)/target/release
+GEMBED_LIB = $(GEMBED_TARGET)/libgembed.dylib
 
 SHLIB_LINK = \
-	-L$(RUST_TARGET) \
-	-lpg_gem_core \
+	-L$(GEMBED_TARGET) \
+	-lgembed \
 	-undefined dynamic_lookup
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-$(MODULE_big).dylib: $(OBJS) $(RUST_LIB)
+$(MODULE_big).dylib: $(OBJS) $(GEMBED_LIB)
 
-$(RUST_LIB):
-	cd $(RUST_DIR) && cargo build --release
+$(GEMBED_LIB):
+	cd $(GEMBED_DIR) && cargo build --release
 
 clean:
 	rm -f $(OBJS) $(MODULE_big).dylib
-	cd $(RUST_DIR) && cargo clean
+	cd $(GEMBED_DIR) && cargo clean
