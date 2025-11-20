@@ -3,6 +3,8 @@
 
 #include "stddef.h"
 
+#define INPUT_TYPE_TEXT 0
+
 /* Structure for storing generated embeddings */
 typedef struct
 {
@@ -22,7 +24,7 @@ typedef struct
 extern int validate_embedding_method(const char *method);
 
 /* Validates the model name for a given method and returns model ID */
-extern int validate_embedding_model(int method_id, const char *model);
+extern int validate_embedding_model(int method_id, const char *model, int input_type);
 
 /* Generates embeddings from text inputs using the specified method and model */
 extern int generate_embeddings_from_texts(

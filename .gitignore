@@ -5,6 +5,7 @@ pg_gem_core/Cargo.lock
 pg_gem_core/target/
 server/venv/
 server/__pycache__/
+.DS_Store
 .clangd
 *.a
 *.o

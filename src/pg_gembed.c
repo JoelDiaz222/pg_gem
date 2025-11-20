@@ -26,9 +26,9 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
 
     int method_id = validate_embedding_method(method_str);
     if (method_id < 0)
-        elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
+        elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'grpc')", method_str);
 
-    int model_id = validate_embedding_model(method_id, model_str);
+    int model_id = validate_embedding_model(method_id, model_str, INPUT_TYPE_TEXT);
     if (model_id < 0)
         elog(ERROR, "Model not allowed: %s", model_str);
 
@@ -59,8 +59,10 @@ Datum generate_embeddings(PG_FUNCTION_ARGS)
 
     pfree(c_inputs);
 
-    if (err != 0)
+    if (err < 0) {
+        free_embedding_batch(&batch);
         elog(ERROR, "embedding generation failed (code=%d)", err);
+    }
 
     Datum *vectors = palloc(sizeof(Datum) * batch.n_vectors);
     for (size_t i = 0; i < batch.n_vectors; i++)
@@ -131,9 +133,9 @@ generate_embeddings_with_ids(PG_FUNCTION_ARGS)
 
         int method_id = validate_embedding_method(method_str);
         if (method_id < 0)
-            elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'remote')", method_str);
+            elog(ERROR, "Invalid embedding method: %s (use 'fastembed' or 'grpc')", method_str);
 
-        int model_id = validate_embedding_model(method_id, model_str);
+        int model_id = validate_embedding_model(method_id, model_str, INPUT_TYPE_TEXT);
         if (model_id < 0)
             elog(ERROR, "Model not allowed: %s", model_str);
 
