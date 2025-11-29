@@ -1,18 +1,27 @@
 -- Core embedding generation functions
-CREATE FUNCTION generate_embeddings(
+CREATE FUNCTION embed_text(
+    method text,
+    model text,
+    input text
+)
+RETURNS vector
+AS 'MODULE_PATHNAME', 'embed_text'
+LANGUAGE C
+STRICT
+PARALLEL SAFE;
+
+CREATE FUNCTION embed_texts(
     method text,
     model text,
     texts text[]
 )
 RETURNS vector[]
-AS
-'MODULE_PATHNAME',
-'generate_embeddings'
+AS 'MODULE_PATHNAME', 'embed_texts'
 LANGUAGE C
 STRICT
 PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION generate_embeddings_with_ids(
+CREATE OR REPLACE FUNCTION embed_texts_with_ids(
     method text,
     model text,
     ids integer[],
@@ -22,12 +31,33 @@ RETURNS TABLE (
     sentence_id integer,
     embedding   vector
 )
-AS
-'MODULE_PATHNAME',
-'generate_embeddings_with_ids'
+AS 'MODULE_PATHNAME', 'embed_texts_with_ids'
 LANGUAGE C
 STRICT
 PARALLEL SAFE;
+
+CREATE FUNCTION embed_multimodal(
+    method text,
+    model text,
+    image bytea DEFAULT NULL,
+    texts text[] DEFAULT NULL
+)
+RETURNS vector[]
+AS 'MODULE_PATHNAME', 'embed_multimodal'
+LANGUAGE C
+PARALLEL SAFE;
+
+COMMENT ON FUNCTION embed_texts(text, text, text[]) IS
+'Generate embeddings for an array of text inputs using the specified method and model';
+
+COMMENT ON FUNCTION embed_text(text, text, text) IS
+'Generate an embedding for a single text input using the specified method and model';
+
+COMMENT ON FUNCTION embed_texts_with_ids(text, text, integer[], text[]) IS
+'Generate embeddings with associated IDs, returning a table of (id, embedding) pairs';
+
+COMMENT ON FUNCTION embed_multimodal(text, text, bytea, text[]) IS
+'Generate embeddings from multimodal inputs (image and/or text). At least one input must be provided.';
 
 -- Background worker schema and tables
 CREATE SCHEMA IF NOT EXISTS gembed;
