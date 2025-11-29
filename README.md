@@ -67,12 +67,46 @@ FROM generate_embeddings_with_ids(
 );
 ```
 
+## Zero-Shot Image Classification
+
+### Basic Usage
+
+```sql
+SELECT embed_multimodal(
+    'grpc',
+    'ViT-B-32',
+    pg_read_binary_file('/path/to/image.jpg'),
+    ARRAY['A diagram', 'A photo']
+);
+```
+
+### Classification Example
+
+```sql
+WITH inputs AS (
+    SELECT 
+        '/path/to/image.jpg' AS img_path,
+        ARRAY['Dog', 'Cat', 'Bird', 'Bat', 'Elephant'] AS labels
+),
+embeddings AS (
+    SELECT 
+        labels,
+        embed_multimodal('grpc', 'ViT-B-32', pg_read_binary_file(img_path), labels) AS all_vecs
+    FROM inputs
+)
+SELECT 
+    labels[ordinality] AS predicted_label,
+    (all_vecs[1] <=> all_vecs[ordinality + 1]) AS distance
+FROM embeddings, 
+     UNNEST(labels) WITH ORDINALITY 
+ORDER BY distance ASC;
+```
+
 ### Semantic Search Example
 
 ```sql
 -- Create a table with embeddings
-CREATE TABLE articles
-(
+CREATE TABLE articles (
     id        SERIAL PRIMARY KEY,
     title     TEXT,
     content   TEXT,
@@ -81,20 +115,37 @@ CREATE TABLE articles
 
 -- Generate embeddings during insert
 INSERT INTO articles (title, content, embedding)
-SELECT title,
-       content,
-       (generate_embeddings('fastembed', 'Qdrant/all-MiniLM-L6-v2-onnx', ARRAY [content]))[1]
-FROM (VALUES ('Understanding Transformers', 'Transformers have revolutionized NLP by using attention mechanisms.'),
-             ('Graph Neural Networks', 'GNNs operate on graph structures to capture relationships.'),
-             ('Reinforcement Learning Basics',
-              'An introduction to RL concepts like agents and environments.')) AS t(title, content);
+SELECT
+    title,
+    content,
+    (embed_texts(
+        'fastembed',
+        'Qdrant/all-MiniLM-L6-v2-onnx',
+        ARRAY[content]
+    ))[1]
+FROM (
+    VALUES
+        ('Understanding Transformers',
+         'Transformers have revolutionized NLP by using attention mechanisms.'),
+        ('Graph Neural Networks',
+         'GNNs operate on graph structures to capture relationships.'),
+        ('Reinforcement Learning Basics',
+         'An introduction to RL concepts like agents and environments.')
+) AS t(title, content);
 
 -- Perform semantic search
-SELECT id,
-       title,
-       content,
-       embedding <=> (SELECT (generate_embeddings('fastembed', 'Qdrant/all-MiniLM-L6-v2-onnx',
-                                                  ARRAY ['machine learning']))[1]) AS distance
+SELECT
+    id,
+    title,
+    content,
+    embedding <=> (
+        SELECT
+            (embed_texts(
+                'fastembed',
+                'Qdrant/all-MiniLM-L6-v2-onnx',
+                ARRAY['machine learning']
+            ))[1]
+    ) AS distance
 FROM articles
 ORDER BY distance
 LIMIT 10;
