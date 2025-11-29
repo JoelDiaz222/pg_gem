@@ -236,14 +236,14 @@ validate_job_method_and_model(EmbeddingJob *job, int *method_id_out,
     method_id = validate_embedding_method(job->method);
     if (method_id < 0)
     {
-        elog(WARNING, "invalid method '%s' for job %d", job->method, job->job_id);
+        elog(WARNING, "Invalid method '%s' for job %d", job->method, job->job_id);
         return false;
     }
 
-    model_id = validate_embedding_model(method_id, job->model);
+    model_id = validate_embedding_model(method_id, job->model, INPUT_TYPE_TEXT);
     if (model_id < 0)
     {
-        elog(WARNING, "invalid model '%s' for job %d", job->model, job->job_id);
+        elog(WARNING, "Invalid model '%s' for job %d", job->model, job->job_id);
         return false;
     }
 
@@ -440,7 +440,15 @@ process_embedding_job(EmbeddingJob *job)
          job->job_id, n_rows, job->method, job->model);
 
     /* Generate embeddings */
-    err = generate_embeddings_from_texts(method_id, model_id, texts, n_rows, &batch);
+    InputData input_data = {
+        .input_type = INPUT_TYPE_TEXT,
+        .binary_data = NULL,
+        .n_binary = 0,
+        .text_data = texts,
+        .n_text = n_rows
+    };
+
+    err = generate_embeddings(method_id, model_id, &input_data, &batch);
     pfree(texts);
 
     if (err != 0)
