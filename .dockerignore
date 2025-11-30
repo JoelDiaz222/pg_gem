@@ -1,0 +1,32 @@
+# Version control
+.git
+.gitignore
+.gitmodules
+
+# IDEs
+.idea
+.vscode
+
+# Build artifacts (Rust)
+target/
+gembed/target/
+**/*.rs.bk
+
+# Build artifacts (C/Postgres)
+src/*.o
+*.so
+*.dylib
+*.dll
+*.bundle
+pg_gembed.o
+embedding_worker.o
+
+# gRPC embedder server
+gembed/server/
+
+# Other
+LICENSE
+README.md
+
+# OS generated files
+.DS_Store

@@ -43,8 +43,13 @@ CREATE EXTENSION pg_gembed;
 ### Basic Embedding Generation
 
 ```sql
--- Generate embeddings using local FastEmbed model
-SELECT generate_embeddings(
+SELECT embed_text(
+    'grpc',
+    'sentence-transformers/all-MiniLM-L6-v2',
+    'Hello world'
+);
+
+SELECT embed_texts(
     'fastembed',
     'Qdrant/all-MiniLM-L6-v2-onnx',
     ARRAY ['Hello world', 'Embedding in PostgreSQL']
@@ -59,7 +64,7 @@ Returns an array of `vector` types compatible with pgvector.
 -- Generate and insert embeddings with associated IDs
 INSERT INTO documents (id, embedding)
 SELECT sentence_id, embedding
-FROM generate_embeddings_with_ids(
+FROM embed_texts_with_ids(
     'fastembed',
     'Qdrant/all-MiniLM-L6-v2-onnx',
     ARRAY [1, 2, 3],
@@ -156,7 +161,7 @@ LIMIT 10;
 ```
 ┌────────────────────────────────────────────┐
 │             PostgreSQL Query               │
-│   (e.g. SELECT generate_embeddings(...))   │
+│   (e.g. SELECT embed_texts(...))   │
 └──────────────────────┬─────────────────────┘
                        │
                        ▼
@@ -181,6 +186,29 @@ LIMIT 10;
 - **Thread-local model caching**: Models loaded once per connection
 - **Zero-copy FFI**: Direct memory transfer between Rust and PostgreSQL
 - **Flat memory layout**: Contiguous vector storage for optimal cache performance
+
+## Docker
+
+A pre-built Docker image is provided for easily setting up a PostgreSQL instance with pg_gembed and its dependencies pre-installed.
+
+### Build and Run
+
+```bash
+docker build -t pg_gembed .
+docker run --name pg_gembed_container -d pg_gembed
+```
+
+### Connect to PostgreSQL
+
+```bash
+docker exec -it pg_gembed_container psql
+```
+
+### Access Shell
+
+```bash
+docker exec -it --user root pg_gembed_container bash
+```
 
 ## License
 

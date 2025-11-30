@@ -7,27 +7,33 @@ DATA = sql/$(EXTENSION)--$(EXTVERSION).sql
 
 PG_CONFIG = pg_config
 
-PG_CPPFLAGS = \
-	-I/opt/homebrew/include/postgresql@18/server \
-	-I/opt/homebrew/Cellar/pgvector/0.8.1/include/postgresql@18/server/extension/vector
+PG_INCLUDEDIR = $(shell $(PG_CONFIG) --includedir-server)
+
+VECTOR_INC_DIR ?= $(PG_INCLUDEDIR)/extension/vector
+
+PG_CPPFLAGS = -I$(VECTOR_INC_DIR)
 
 GEMBED_DIR = gembed
 GEMBED_TARGET = $(GEMBED_DIR)/target/release
-GEMBED_LIB = $(GEMBED_TARGET)/libgembed.dylib
+GEMBED_LIB = $(GEMBED_TARGET)/libgembed.a
 
 SHLIB_LINK = \
 	-L$(GEMBED_TARGET) \
-	-lgembed \
-	-undefined dynamic_lookup
+	-lgembed
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+	SHLIB_LINK += -undefined dynamic_lookup
+endif
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-$(MODULE_big).dylib: $(OBJS) $(GEMBED_LIB)
+$(shlib): $(GEMBED_LIB)
 
 $(GEMBED_LIB):
 	cd $(GEMBED_DIR) && cargo build --release
 
 clean:
-	rm -f $(OBJS) $(MODULE_big).dylib
+	rm -f $(OBJS) $(MODULE_big).so $(MODULE_big).dylib
 	cd $(GEMBED_DIR) && cargo clean
