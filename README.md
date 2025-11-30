@@ -44,14 +44,14 @@ CREATE EXTENSION pg_gembed;
 
 ```sql
 SELECT embed_text(
-    'grpc',
-    'sentence-transformers/all-MiniLM-L6-v2',
+    'fastembed',
+    'Qdrant/all-MiniLM-L6-v2-onnx',
     'Hello world'
 );
 
 SELECT embed_texts(
-    'fastembed',
-    'Qdrant/all-MiniLM-L6-v2-onnx',
+    'grpc',
+    'sentence-transformers/all-MiniLM-L6-v2',
     ARRAY ['Hello world', 'Embedding in PostgreSQL']
 );
 ```
@@ -210,6 +210,20 @@ docker exec -it pg_gembed_container psql
 docker exec -it --user root pg_gembed_container bash
 ```
 
+## Docker Compose
+
+To run the full stack (PostgreSQL with pg_gembed + gRPC Embedding Server), use Docker Compose:
+
+```bash
+docker-compose up --build
+```
+
+This starts:
+- `pg_gembed`: PostgreSQL instance with the extension installed (port 5432)
+- `grpc_server`: Python-based embedding server (port 50051)
+
+When using the `grpc` embedder in SQL, the extension will communicate with the `grpc_server` container automatically via the compose network.
+
 ## License
 
 Licensed under the [Apache License 2.0](./LICENSE).
@@ -218,8 +232,6 @@ Licensed under the [Apache License 2.0](./LICENSE).
 
 - [pgvector](https://github.com/pgvector/pgvector) for the vector datatype
 - [FastEmbed-rs](https://github.com/Anush008/fastembed-rs) for the embedding library
-    - [A fork](https://github.com/JoelDiaz222/fastembed-rs) has been done to support returning a contiguous buffer of
-      embeddings
+    - [A fork](https://github.com/JoelDiaz222/fastembed-rs) has been done to support returning a contiguous buffer of embeddings
 - [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) for gRPC protocol reference
-    - [A fork](https://github.com/JoelDiaz222/text-embeddings-inference) has been done for generating batches of
-      embeddings using gRPC
+    - [A fork](https://github.com/JoelDiaz222/text-embeddings-inference) has been done for generating batches ofembeddings using gRPC
