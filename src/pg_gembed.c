@@ -14,18 +14,18 @@ PG_FUNCTION_INFO_V1(embed_text);
 
 Datum embed_text(PG_FUNCTION_ARGS)
 {
-    text *method_text = PG_GETARG_TEXT_P(0);
+    text *embedder_text = PG_GETARG_TEXT_P(0);
     text *model_text = PG_GETARG_TEXT_P(1);
     text *input_text = PG_GETARG_TEXT_P(2);
 
-    char *method_str = text_to_cstring(method_text);
+    char *embedder_str = text_to_cstring(embedder_text);
     char *model_str = text_to_cstring(model_text);
 
-    int method_id = validate_embedding_method(method_str);
-    if (method_id < 0)
-        elog(ERROR, "Invalid embedding method: %s", method_str);
+    int embedder_id = validate_embedder(embedder_str);
+    if (embedder_id < 0)
+        elog(ERROR, "Invalid embedder: %s", embedder_str);
 
-    int model_id = validate_embedding_model(method_id, model_str, INPUT_TYPE_TEXT);
+    int model_id = validate_embedding_model(embedder_id, model_str, INPUT_TYPE_TEXT);
     if (model_id < 0)
         elog(ERROR, "Model not allowed: %s", model_str);
 
@@ -42,7 +42,7 @@ Datum embed_text(PG_FUNCTION_ARGS)
     };
 
     EmbeddingBatch batch;
-    int err = generate_embeddings(method_id, model_id, &input_data, &batch);
+    int err = generate_embeddings(embedder_id, model_id, &input_data, &batch);
 
     if (err < 0) {
         free_embedding_batch(&batch);
@@ -70,21 +70,21 @@ PG_FUNCTION_INFO_V1(embed_texts);
 
 Datum embed_texts(PG_FUNCTION_ARGS)
 {
-    text *method_text = PG_GETARG_TEXT_P(0);
+    text *embedder_text = PG_GETARG_TEXT_P(0);
     text *model_text = PG_GETARG_TEXT_P(1);
     ArrayType *input_array = PG_GETARG_ARRAYTYPE_P(2);
     Datum *text_elems;
     bool *nulls;
     int nitems;
 
-    char *method_str = text_to_cstring(method_text);
+    char *embedder_str = text_to_cstring(embedder_text);
     char *model_str = text_to_cstring(model_text);
 
-    int method_id = validate_embedding_method(method_str);
-    if (method_id < 0)
-        elog(ERROR, "Invalid embedding method: %s", method_str);
+    int embedder_id = validate_embedder(embedder_str);
+    if (embedder_id < 0)
+        elog(ERROR, "Invalid embedder: %s", embedder_str);
 
-    int model_id = validate_embedding_model(method_id, model_str, INPUT_TYPE_TEXT);
+    int model_id = validate_embedding_model(embedder_id, model_str, INPUT_TYPE_TEXT);
     if (model_id < 0)
         elog(ERROR, "Model not allowed: %s", model_str);
 
@@ -119,7 +119,7 @@ Datum embed_texts(PG_FUNCTION_ARGS)
     };
 
     EmbeddingBatch batch;
-    int err = generate_embeddings(method_id, model_id, &input_data, &batch);
+    int err = generate_embeddings(embedder_id, model_id, &input_data, &batch);
 
     pfree(c_inputs);
 
@@ -163,7 +163,7 @@ PG_FUNCTION_INFO_V1(embed_texts_with_ids);
 Datum
 embed_texts_with_ids(PG_FUNCTION_ARGS)
 {
-    text *method_text = PG_GETARG_TEXT_P(0);
+    text *embedder_text = PG_GETARG_TEXT_P(0);
     text *model_text = PG_GETARG_TEXT_P(1);
     ArrayType *ids_array = PG_GETARG_ARRAYTYPE_P(2);
     ArrayType *texts_array = PG_GETARG_ARRAYTYPE_P(3);
@@ -192,14 +192,14 @@ embed_texts_with_ids(PG_FUNCTION_ARGS)
         funcctx = SRF_FIRSTCALL_INIT();
         oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
-        char *method_str = text_to_cstring(method_text);
+        char *embedder_str = text_to_cstring(embedder_text);
         char *model_str = text_to_cstring(model_text);
 
-        int method_id = validate_embedding_method(method_str);
-        if (method_id < 0)
-            elog(ERROR, "Invalid embedding method: %s", method_str);
+        int embedder_id = validate_embedder(embedder_str);
+        if (embedder_id < 0)
+            elog(ERROR, "Invalid embedder: %s", embedder_str);
 
-        int model_id = validate_embedding_model(method_id, model_str, INPUT_TYPE_TEXT);
+        int model_id = validate_embedding_model(embedder_id, model_str, INPUT_TYPE_TEXT);
         if (model_id < 0)
             elog(ERROR, "Model not allowed: %s", model_str);
 
@@ -234,7 +234,7 @@ embed_texts_with_ids(PG_FUNCTION_ARGS)
         };
 
         EmbeddingBatch batch;
-        int err = generate_embeddings(method_id, model_id, &input_data, &batch);
+        int err = generate_embeddings(embedder_id, model_id, &input_data, &batch);
 
         pfree(c_inputs);
 
@@ -299,21 +299,21 @@ PG_FUNCTION_INFO_V1(embed_multimodal);
 
 Datum embed_multimodal(PG_FUNCTION_ARGS)
 {
-    text *method_text = PG_GETARG_TEXT_P(0);
+    text *embedder_text = PG_GETARG_TEXT_P(0);
     text *model_text = PG_GETARG_TEXT_P(1);
     bytea *image_bytea = PG_ARGISNULL(2) ? NULL : PG_GETARG_BYTEA_P(2);
     ArrayType *text_array = PG_ARGISNULL(3) ? NULL : PG_GETARG_ARRAYTYPE_P(3);
 
-    char *method_str = text_to_cstring(method_text);
+    char *embedder_str = text_to_cstring(embedder_text);
     char *model_str = text_to_cstring(model_text);
 
-    int method_id = validate_embedding_method(method_str);
-    if (method_id < 0)
-        elog(ERROR, "Invalid embedding method: %s", method_str);
+    int embedder_id = validate_embedder(embedder_str);
+    if (embedder_id < 0)
+        elog(ERROR, "Invalid embedder: %s", embedder_str);
 
-    int model_id = validate_embedding_model(method_id, model_str, INPUT_TYPE_MULTIMODAL);
+    int model_id = validate_embedding_model(embedder_id, model_str, INPUT_TYPE_MULTIMODAL);
     if (model_id < 0)
-        elog(ERROR, "Model not allowed for multimodal: %s", model_str);
+        elog(ERROR, "Model not allowed for multimodal embedding: %s", model_str);
 
     ByteSlice image_slice = {NULL, 0};
     if (image_bytea != NULL)
@@ -354,7 +354,7 @@ Datum embed_multimodal(PG_FUNCTION_ARGS)
     };
 
     EmbeddingBatch batch;
-    int err = generate_embeddings(method_id, model_id, &input_data, &batch);
+    int err = generate_embeddings(embedder_id, model_id, &input_data, &batch);
 
     if (c_inputs)
         pfree(c_inputs);

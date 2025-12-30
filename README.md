@@ -198,13 +198,15 @@ docker build -t pg_gembed .
 docker run --name pg_gembed_container -d pg_gembed
 ```
 
-### Connect to PostgreSQL
+### Create the Extension
 
 ```bash
 docker exec -it pg_gembed_container psql
+CREATE EXTENSION vector;
+CREATE EXTENSION pg_gembed;
 ```
 
-### Access Shell
+### Access the Shell
 
 ```bash
 docker exec -it --user root pg_gembed_container bash
@@ -221,8 +223,6 @@ docker-compose up --build
 This starts:
 - `pg_gembed`: PostgreSQL instance with the extension installed (port 5432)
 - `grpc_server`: Python-based embedding server (port 50051)
-
-When using the `grpc` embedder in SQL, the extension will communicate with the `grpc_server` container automatically via the compose network.
 
 ## License
 

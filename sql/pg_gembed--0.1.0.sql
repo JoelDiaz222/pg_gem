@@ -1,6 +1,6 @@
 -- Core embedding generation functions
 CREATE FUNCTION embed_text(
-    method text,
+    embedder text,
     model text,
     input text
 )
@@ -11,7 +11,7 @@ STRICT
 PARALLEL SAFE;
 
 CREATE FUNCTION embed_texts(
-    method text,
+    embedder text,
     model text,
     texts text[]
 )
@@ -22,7 +22,7 @@ STRICT
 PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION embed_texts_with_ids(
-    method text,
+    embedder text,
     model text,
     ids integer[],
     texts text[]
@@ -37,7 +37,7 @@ STRICT
 PARALLEL SAFE;
 
 CREATE FUNCTION embed_multimodal(
-    method text,
+    embedder text,
     model text,
     image bytea DEFAULT NULL,
     texts text[] DEFAULT NULL
@@ -48,10 +48,10 @@ LANGUAGE C
 PARALLEL SAFE;
 
 COMMENT ON FUNCTION embed_texts(text, text, text[]) IS
-'Generate embeddings for an array of text inputs using the specified method and model';
+'Generate embeddings for an array of text inputs using the specified embedder and model';
 
 COMMENT ON FUNCTION embed_text(text, text, text) IS
-'Generate an embedding for a single text input using the specified method and model';
+'Generate an embedding for a single text input using the specified embedder and model';
 
 COMMENT ON FUNCTION embed_texts_with_ids(text, text, integer[], text[]) IS
 'Generate embeddings with associated IDs, returning a table of (id, embedding) pairs';
@@ -71,7 +71,7 @@ CREATE TABLE gembed.embedding_jobs (
     target_schema     TEXT      DEFAULT 'public',
     target_table      TEXT      NOT NULL,
     target_column     TEXT      NOT NULL,
-    method            TEXT      NOT NULL,
+    embedder            TEXT      NOT NULL,
     model             TEXT      NOT NULL,
     enabled           BOOLEAN   DEFAULT true,
     last_processed_id INTEGER   DEFAULT 0,
@@ -89,7 +89,7 @@ SELECT
     j.job_id,
     j.source_schema || '.' || j.source_table || '.' || j.source_column AS source,
     j.target_schema || '.' || j.target_table || '.' || j.target_column AS target,
-    j.method,
+    j.embedder,
     j.model,
     j.enabled,
     j.last_processed_id,

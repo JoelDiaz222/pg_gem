@@ -39,15 +39,15 @@ typedef struct
     size_t n_text;                     /* Number of text items */
 } InputData;
 
-/* Validates the embedding method name and returns method ID */
-extern int validate_embedding_method(const char *method);
+/* Validates the embedder name and returns its ID (-1 if non-existent) */
+extern int validate_embedder(const char *name);
 
-/* Validates the model name for a given method and returns model ID */
-extern int validate_embedding_model(int method_id, const char *model, int input_type);
+/* Validates the model name for a given embedder and returns model ID */
+extern int validate_embedding_model(int embedder_id, const char *model, int input_type);
 
 /* Generates embeddings for the given input data */
 extern int generate_embeddings(
-    int method_id,
+    int embedder_id,
     int model_id,
     const InputData *input_data,
     EmbeddingBatch *out_batch

@@ -59,7 +59,7 @@ parse_job_tuple(HeapTuple tuple, TupleDesc tupdesc)
     job->target_schema = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 6, &isnull));
     job->target_table = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 7, &isnull));
     job->target_column = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 8, &isnull));
-    job->method = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 9, &isnull));
+    job->embedder = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 9, &isnull));
     job->model = TextDatumGetCString(SPI_getbinval(tuple, tupdesc, 10, &isnull));
 
     elog(DEBUG1, "Loaded job ID %d (%s.%s -> %s.%s)",
@@ -85,7 +85,7 @@ load_embedding_jobs(void)
     appendStringInfo(&buf,
         "SELECT job_id, source_schema, source_table, source_column, "
         "       source_id_column, target_schema, target_table, "
-        "       target_column, method, model "
+        "       target_column, embedder, model "
         "FROM gembed.embedding_jobs "
         "WHERE enabled = true");
 
@@ -225,29 +225,29 @@ extract_ids_and_texts(int job_id, int n_rows, int **ids_out,
 }
 
 /*
- * Validate method and model for a job
+ * Validate embedder and model for a job
  * Returns true if valid, false otherwise
  */
 static bool
-validate_job_method_and_model(EmbeddingJob *job, int *method_id_out,
+validate_job_embedder_and_model(EmbeddingJob *job, int *embedder_id_out,
                                int *model_id_out)
 {
-    int method_id, model_id;
-    method_id = validate_embedding_method(job->method);
-    if (method_id < 0)
+    int embedder_id, model_id;
+    embedder_id = validate_embedder(job->embedder);
+    if (embedder_id < 0)
     {
-        elog(WARNING, "Invalid method '%s' for job %d", job->method, job->job_id);
+        elog(WARNING, "Invalid embedder '%s' for job %d", job->embedder, job->job_id);
         return false;
     }
 
-    model_id = validate_embedding_model(method_id, job->model, INPUT_TYPE_TEXT);
+    model_id = validate_embedding_model(embedder_id, job->model, INPUT_TYPE_TEXT);
     if (model_id < 0)
     {
         elog(WARNING, "Invalid model '%s' for job %d", job->model, job->job_id);
         return false;
     }
 
-    *method_id_out = method_id;
+    *embedder_id_out = embedder_id;
     *model_id_out = model_id;
     return true;
 }
@@ -389,7 +389,7 @@ process_embedding_job(EmbeddingJob *job)
     int *ids = NULL;
     StringSlice *texts = NULL;
     int max_id;
-    int method_id, model_id;
+    int embedder_id, model_id;
     EmbeddingBatch batch;
     int err;
 
@@ -428,8 +428,8 @@ process_embedding_job(EmbeddingJob *job)
     if (max_id < 0)
         return;
 
-    /* Validate method and model */
-    if (!validate_job_method_and_model(job, &method_id, &model_id))
+    /* Validate embedder and model */
+    if (!validate_job_embedder_and_model(job, &embedder_id, &model_id))
     {
         pfree(ids);
         pfree(texts);
@@ -437,7 +437,7 @@ process_embedding_job(EmbeddingJob *job)
     }
 
     elog(DEBUG1, "Job %d: Generating embeddings for %d texts using %s with model %s.",
-         job->job_id, n_rows, job->method, job->model);
+         job->job_id, n_rows, job->embedder, job->model);
 
     /* Generate embeddings */
     InputData input_data = {
@@ -448,7 +448,7 @@ process_embedding_job(EmbeddingJob *job)
         .n_text = n_rows
     };
 
-    err = generate_embeddings(method_id, model_id, &input_data, &batch);
+    err = generate_embeddings(embedder_id, model_id, &input_data, &batch);
     pfree(texts);
 
     if (err != 0)
