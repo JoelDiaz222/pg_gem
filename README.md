@@ -80,7 +80,7 @@ FROM embed_texts_with_ids(
 SELECT embed_multimodal(
     'grpc',
     'ViT-B-32',
-    pg_read_binary_file('/path/to/image.jpg'),
+    ARRAY[pg_read_binary_file('/path/to/image.jpg')],
     ARRAY['A diagram', 'A photo']
 );
 ```
@@ -96,7 +96,7 @@ WITH inputs AS (
 embeddings AS (
     SELECT 
         labels,
-        embed_multimodal('grpc', 'ViT-B-32', pg_read_binary_file(img_path), labels) AS all_vecs
+        embed_multimodal('grpc', 'ViT-B-32', ARRAY[pg_read_binary_file(img_path)], labels) AS all_vecs
     FROM inputs
 )
 SELECT 
@@ -189,7 +189,8 @@ LIMIT 10;
 
 ## Docker
 
-A pre-built Docker image is provided for easily setting up a PostgreSQL instance with pg_gembed and its dependencies pre-installed.
+A pre-built Docker image is provided for easily setting up a PostgreSQL instance with pg_gembed and its dependencies
+pre-installed.
 
 ### Build and Run
 
@@ -221,6 +222,7 @@ docker-compose up --build
 ```
 
 This starts:
+
 - `pg_gembed`: PostgreSQL instance with the extension installed (port 5432)
 - `grpc_server`: Python-based embedding server (port 50051)
 
@@ -232,6 +234,8 @@ Licensed under the [Apache License 2.0](./LICENSE).
 
 - [pgvector](https://github.com/pgvector/pgvector) for the vector datatype
 - [FastEmbed-rs](https://github.com/Anush008/fastembed-rs) for the embedding library
-    - [A fork](https://github.com/JoelDiaz222/fastembed-rs) has been done to support returning a contiguous buffer of embeddings
+    - [A fork](https://github.com/JoelDiaz222/fastembed-rs) has been done to support returning a contiguous buffer of
+      embeddings
 - [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) for gRPC protocol reference
-    - [A fork](https://github.com/JoelDiaz222/text-embeddings-inference) has been done for generating batches ofembeddings using gRPC
+    - [A fork](https://github.com/JoelDiaz222/text-embeddings-inference) has been done for generating batches
+      ofembeddings using gRPC
